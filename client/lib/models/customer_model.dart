@@ -61,6 +61,7 @@ class CustomerModel {
     this.tags,
     this.balance,
     this.walletBalance,
+    this.subscriptionBalance,
     this.creditLimit,
     this.location,
     this.zoneName,
@@ -99,6 +100,7 @@ class CustomerModel {
   final List<String>? tags;
   final double? balance;
   final double? walletBalance;
+  final double? subscriptionBalance;
   final double? creditLimit;
   final GeoPoint? location;
 
@@ -119,6 +121,9 @@ class CustomerModel {
   /// Spendable wallet: max of canonical + legacy fields (migration drift), floored at 0.
   double get effectiveWalletBalance =>
       math.max(0, math.max(walletBalance ?? 0, balance ?? 0));
+
+  /// Spendable subscription balance, defaults to 0.
+  double get effectiveSubscriptionBalance => subscriptionBalance ?? 0.0;
 
   factory CustomerModel.fromJson(Map<String, dynamic> json) {
     final id = json['_id']?.toString() ?? json['id']?.toString() ?? '';
@@ -212,6 +217,9 @@ class CustomerModel {
       walletBalance: (json['walletBalance'] is num)
           ? (json['walletBalance'] as num).toDouble()
           : null,
+      subscriptionBalance: (json['subscriptionBalance'] is num)
+          ? (json['subscriptionBalance'] as num).toDouble()
+          : null,
       creditLimit: (json['creditLimit'] is num)
           ? (json['creditLimit'] as num).toDouble()
           : null,
@@ -241,6 +249,7 @@ class CustomerModel {
       if (notes != null) 'notes': notes,
       if (tags != null && tags!.isNotEmpty) 'tags': tags,
       if (creditLimit != null) 'creditLimit': creditLimit,
+      if (subscriptionBalance != null) 'subscriptionBalance': subscriptionBalance,
       if (location != null)
         'location': {
           'type': 'Point',

@@ -13,6 +13,8 @@ import '../../../models/customer_detail_model.dart';
 import '../../../models/transaction_model.dart';
 import '../../../services/customer_detail_service.dart';
 import '../../../services/pdf_download_service.dart';
+import '../../../features/subscriptions/data/subscription_api.dart';
+import '../../../features/subscriptions/models/subscription_model.dart';
 
 import 'customer_info_tab.dart';
 
@@ -56,6 +58,7 @@ class TransactionsTab extends StatefulWidget {
 class _TransactionsTabState extends State<TransactionsTab>
     with AutomaticKeepAliveClientMixin {
   List<CustomerDetailTransaction> _all = [];
+  SubscriptionModel? _subscription;
   bool _loading = true;
   String? _error;
   int _filter = 0; // 0 all, 1 today, 2 week
@@ -86,9 +89,43 @@ class _TransactionsTabState extends State<TransactionsTab>
         startDate: range.$1,
         endDate: range.$2,
       );
+
+      SubscriptionModel? activeSub;
+      try {
+        final res = await SubscriptionApi.list(
+          customerId: widget.customerId,
+          limit: 50,
+        );
+        final inner = res['data'];
+        List<dynamic> rawList = [];
+        if (inner is Map<String, dynamic>) {
+          rawList = (inner['data'] as List?) ?? [];
+        } else if (inner is List) {
+          rawList = inner;
+        }
+        final subsList = rawList
+            .whereType<Map<String, dynamic>>()
+            .map(SubscriptionModel.fromJson)
+            .toList();
+
+        if (subsList.isNotEmpty) {
+          final activeOrPending = subsList
+              .where((s) => s.status == 'active' || s.status == 'pending')
+              .toList();
+          if (activeOrPending.isNotEmpty) {
+            activeSub = activeOrPending.first;
+          } else {
+            activeSub = subsList.first;
+          }
+        }
+      } catch (_) {
+        // Ignore subscription fetch error to not block transactions tab loading entirely
+      }
+
       if (mounted) {
         setState(() {
           _all = list;
+          _subscription = activeSub;
           _loading = false;
         });
       }
@@ -504,6 +541,15 @@ class _TransactionsTabState extends State<TransactionsTab>
     final subscriptionTotal = perDayAmount * 30;
     final remainingBalance = subscriptionTotal - totalDeducted;
 
+    final showZeros = _subscription == null ||
+        !['active', 'pending'].contains(_subscription!.status) ||
+        _subscription!.remainingBalance == null;
+
+    final displaySubscriptionTotal = showZeros ? 0.0 : subscriptionTotal;
+    final displayTotalDeducted = showZeros ? 0.0 : totalDeducted;
+    final displayRemainingBalance = showZeros ? 0.0 : remainingBalance;
+    final displayDailyDeduction = showZeros ? '₹0/day' : '₹${perDayAmount.toStringAsFixed(0)}/day';
+
     String formatAmount(double value) {
       if (value < 0) {
         return '-₹${value.abs().toStringAsFixed(0)}';
@@ -551,10 +597,10 @@ class _TransactionsTabState extends State<TransactionsTab>
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Column(
             children: [
-              row('Subscription Total', formatAmount(subscriptionTotal)),
-              row('Total Deducted', formatAmount(totalDeducted)),
-              row('Remaining Balance', formatAmount(remainingBalance)),
-              row('Daily Deduction', '₹${perDayAmount.toStringAsFixed(0)}/day'),
+              row('Subscription Total', formatAmount(displaySubscriptionTotal)),
+              row('Total Deducted', formatAmount(displayTotalDeducted)),
+              row('Remaining Balance', formatAmount(displayRemainingBalance)),
+              row('Daily Deduction', displayDailyDeduction),
             ],
           ),
         ),

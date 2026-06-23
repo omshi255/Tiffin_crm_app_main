@@ -171,41 +171,108 @@ export const listCustomers = asyncHandler(async (req, res) => {
   const skip = (page - 1) * limit;
 
   const ownerId = req.user.userId;
-  const filter = { ownerId, isDeleted: { $ne: true } };
-  if (value.status) filter.status = value.status;
-
-  if (value.lowBalance) {
-    const vendor = await User.findById(ownerId).select("settings").lean();
-    const threshold = vendor?.settings?.lowBalanceThreshold ?? 100;
-    filter.$or = [{ walletBalance: { $lt: threshold } }, { balance: { $lt: threshold } }];
-  }
+  const matchQuery = { ownerId: new mongoose.Types.ObjectId(ownerId), isDeleted: { $ne: true } };
+  if (value.status) matchQuery.status = value.status;
 
   if (value.zoneId) {
-    filter.zoneId = value.zoneId;
+    matchQuery.zoneId = new mongoose.Types.ObjectId(value.zoneId);
   } else if (value.zone) {
-    filter.zone = value.zone;
+    matchQuery.zone = value.zone;
   } else if (value.deliveryZone) {
-    filter.zone = value.deliveryZone;
+    matchQuery.zone = value.deliveryZone;
   }
 
-  const [data, total] = await Promise.all([
-    Customer.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    Customer.countDocuments(filter),
+  let threshold = 100;
+  if (value.lowBalance) {
+    const vendor = await User.findById(ownerId).select("settings").lean();
+    threshold = vendor?.settings?.lowBalanceThreshold ?? 100;
+  }
+
+  const pipeline = [
+    { $match: matchQuery },
+    // Lookup subscriptions for the customer
+    {
+      $lookup: {
+        from: "subscriptions",
+        let: { customerId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$customerId", "$$customerId"] },
+                  { $in: ["$status", ["active", "paused"]] },
+                  { $gt: ["$endDate", new Date()] }
+                ]
+              }
+            }
+          },
+          { $sort: { endDate: -1 } }
+        ],
+        as: "activeSubs"
+      }
+    },
+    // Project activeSub and subscriptionBalance
+    {
+      $addFields: {
+        activeSub: { $arrayElemAt: ["$activeSubs", 0] }
+      }
+    },
+    {
+      $addFields: {
+        subscriptionBalance: {
+          $cond: {
+            if: { $gt: ["$activeSub", null] },
+            then: {
+              $ifNull: [
+                "$activeSub.remainingBalance",
+                {
+                  $cond: {
+                    if: { $gt: ["$activeSub.totalAmount", 0] },
+                    then: "$activeSub.totalAmount",
+                    else: { $ifNull: ["$activeSub.paidAmount", 0] }
+                  }
+                }
+              ]
+            },
+            else: 0
+          }
+        }
+      }
+    }
+  ];
+
+  // If lowBalance is requested, filter by subscriptionBalance
+  if (value.lowBalance) {
+    pipeline.push({
+      $match: {
+        subscriptionBalance: { $lt: threshold }
+      }
+    });
+  }
+
+  // Count total matching records
+  const countPipeline = [...pipeline, { $count: "total" }];
+
+  // Add sort, skip, limit to pipeline
+  pipeline.push(
+    { $sort: { createdAt: -1 } },
+    { $skip: skip },
+    { $limit: limit }
+  );
+
+  const [data, countResult] = await Promise.all([
+    Customer.aggregate(pipeline),
+    Customer.aggregate(countPipeline)
   ]);
 
+  const total = countResult[0]?.total || 0;
   const totalPages = Math.ceil(total / limit);
 
   // Prefer the dedicated whatsapp number if set; fall back to the registered phone.
   const enriched = data.map((c) => {
-    const w = displayWalletBalance(c);
     return {
       ...c,
-      balance: w,
-      walletBalance: w,
       whatsappUrl: `https://wa.me/91${c.whatsapp || c.phone}`,
     };
   });

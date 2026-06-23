@@ -1370,7 +1370,7 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
     );
   }
 
-  static bool _isLowBalance(CustomerModel c) => c.effectiveWalletBalance < 100;
+  static bool _isLowBalance(CustomerModel c) => c.effectiveSubscriptionBalance < 100;
 
   static String? _diet(CustomerModel c) {
     final dt = c.dietType?.trim().toLowerCase();
@@ -1494,9 +1494,9 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
         case _CustomerSort.nameZa:
           return cmpString(b.name, a.name);
         case _CustomerSort.lowestBalance:
-          return a.effectiveWalletBalance.compareTo(b.effectiveWalletBalance);
+          return a.effectiveSubscriptionBalance.compareTo(b.effectiveSubscriptionBalance);
         case _CustomerSort.highestBalance:
-          return b.effectiveWalletBalance.compareTo(a.effectiveWalletBalance);
+          return b.effectiveSubscriptionBalance.compareTo(a.effectiveSubscriptionBalance);
         case _CustomerSort.lowestTiffinCounts:
           return _tiffinCount(a).compareTo(_tiffinCount(b));
         case _CustomerSort.highestTiffinCounts:
@@ -2433,7 +2433,7 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
             .join(', ');
         lines.add([
           c.name, c.phone, addr, c.area ?? '',
-          c.effectiveWalletBalance.toStringAsFixed(2),
+          c.effectiveSubscriptionBalance.toStringAsFixed(2),
           c.status,
           (c.tags ?? const <String>[]).join(' | '),
           slots,
@@ -2476,7 +2476,7 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
                   [
                     c.name, c.phone,
                     '${c.address ?? ''} ${c.area ?? ''}'.trim(),
-                    '₹${c.effectiveWalletBalance.toStringAsFixed(2)}',
+                    '₹${c.effectiveSubscriptionBalance.toStringAsFixed(2)}',
                     c.status,
                     (c.timeSlots ?? const <String>[]).join(' | '),
                   ],
@@ -3004,8 +3004,8 @@ class _CustomerRow extends StatelessWidget {
     final avatarColor = colorFromName(customer.name);
     final accent = _accentColor(customer.status);
     final hasArea = customer.area?.isNotEmpty == true;
-    final walletShown = customer.effectiveWalletBalance;
-    final isLowBal = walletShown < 100;
+    final balanceShown = customer.effectiveSubscriptionBalance;
+    final isLowBal = balanceShown < 100;
     final showName = fields.contains(_CardField.name);
     final showPhone = fields.contains(_CardField.phone);
     final showArea = fields.contains(_CardField.area);
@@ -3205,7 +3205,7 @@ class _CustomerRow extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '₹${walletShown.toStringAsFixed(0)}',
+                              '₹${balanceShown.toStringAsFixed(0)}',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -3215,7 +3215,7 @@ class _CustomerRow extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              'balance',
+                              'remaining',
                               style: TextStyle(
                                 fontSize: 9,
                                 color: context.textHint,
@@ -3287,7 +3287,7 @@ final class _CustomerAnalyticsScreen extends StatelessWidget {
     final blocked =
         countWhere((c) => c.status.toLowerCase() == 'blocked');
     final lowBal =
-        countWhere((c) => c.effectiveWalletBalance < 100);
+        countWhere((c) => c.effectiveSubscriptionBalance < 100);
     final veg = countWhere(
         (c) => (c.dietType ?? '').toLowerCase().contains('veg'));
     final nonVeg = countWhere((c) {
