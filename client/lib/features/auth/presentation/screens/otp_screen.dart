@@ -218,7 +218,11 @@ class _OtpScreenState extends State<OtpScreen> with TickerProviderStateMixin {
     }
     setState(() => _isVerifying = true);
     try {
-      final response = await AuthApi.verifyOtp(widget.phone, otp);
+      final response = await AuthApi.verifyOtp(
+        widget.phone,
+        otp,
+        role: widget.selectedRole,
+      );
       await SecureStorage.saveAccessToken(response.accessToken);
       await SecureStorage.saveRefreshToken(response.refreshToken);
       final user = response.user;

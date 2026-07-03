@@ -90,6 +90,7 @@ const verifyOtpSchema = Joi.object({
     "string.length": "OTP must be 6 digits",
     "string.pattern.base": "OTP must contain only digits",
   }),
+  role: Joi.string().valid("vendor", "customer", "delivery_staff", "admin").optional(),
 });
 
 const refreshTokenSchema = Joi.object({
@@ -315,7 +316,7 @@ export const verifyOtpController = asyncHandler(async (req, res, next) => {
     throw new ApiError(400, error.details.map((d) => d.message).join("; "));
   }
 
-  const { phone, otp } = value;
+  const { phone, otp, role: requestedRole } = value;
   const isValid = await verifyOtp(phone, otp);
 
   if (!isValid) {
@@ -325,38 +326,50 @@ export const verifyOtpController = asyncHandler(async (req, res, next) => {
   const resolved = await resolveRoleForPhone(phone);
   let user = await User.findOne({ phone });
 
+  let targetRole = requestedRole || resolved.role;
+
+  // Validate authorization for the target role
+  if (targetRole === "customer") {
+    if (resolved.role !== "customer") {
+      throw new ApiError(400, "This phone number is not registered as a customer. Please contact your tiffin provider.");
+    }
+  } else if (targetRole === "delivery_staff") {
+    if (resolved.role !== "delivery_staff") {
+      throw new ApiError(400, "This phone number is not registered as delivery staff.");
+    }
+  } else if (targetRole === "admin") {
+    if (!user || user.role !== "admin") {
+      throw new ApiError(403, "Access denied.");
+    }
+  }
+
   if (!user) {
-    user = await User.create({ phone, role: resolved.role });
+    user = await User.create({ phone, role: targetRole });
   } else if (user.role === "admin") {
-    // Admin is never overridden: resolveRoleForPhone is not used for role/ownerId
-  } else if (user.role === "vendor") {
-    // Override to customer/delivery_staff ONLY if they have NO vendor business data.
-    // Protects real vendors from abuse: a malicious vendor could add another vendor's
-    // phone as customer to hijack their role. We only override "accidental vendors"
-    // (empty account, no customers/plans/subscriptions).
-    if (resolved.role !== "vendor") {
+    // Admin is never overridden
+    targetRole = "admin";
+  } else {
+    // For non-admin users, set their DB role to match targetRole.
+    // If they did not explicitly select a role at login (e.g., auto-login or legacy clients),
+    // we preserve the vendor account lock protection.
+    if (!requestedRole && user.role === "vendor" && targetRole !== "vendor") {
       const hasBusiness = await hasVendorBusinessData(user._id);
-      if (!hasBusiness) {
-        await User.updateOne(
-          { _id: user._id },
-          { $set: { role: resolved.role } }
-        );
-        user.role = resolved.role;
-      } else {
-        resolved.role = "vendor";
+      if (hasBusiness) {
+        targetRole = "vendor";
         resolved.ownerId = null;
       }
-    } else {
-      resolved.ownerId = null;
     }
-  } else {
-    // Keep customer/delivery_staff in sync: if resolved role changed, update user. Never overwrite admin.
-    if (user.role !== resolved.role) {
+
+    if (user.role !== targetRole) {
       await User.updateOne(
         { _id: user._id },
-        { $set: { role: resolved.role } }
+        { $set: { role: targetRole } }
       );
-      user.role = resolved.role;
+      user.role = targetRole;
+    }
+
+    if (targetRole === "vendor") {
+      resolved.ownerId = null;
     }
   }
 
@@ -371,12 +384,7 @@ export const verifyOtpController = asyncHandler(async (req, res, next) => {
   user = user.toObject();
 
   // Admin is never overridden: use stored user.role and no ownerId
-  const role =
-    user.role === "admin"
-      ? "admin"
-      : user.role === "vendor"
-        ? "vendor"
-        : resolved.role;
+  const role = user.role;
   const ownerId =
     role === "admin"
       ? null

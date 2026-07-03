@@ -21,7 +21,6 @@ const paginationSchema = Joi.object({
   limit: Joi.number().integer().min(1).max(200).optional(),
   vendorId: Joi.string().hex().length(24).optional(),
 });
-
 const paginate = (query, page = 1, limit = 20) => ({
   skip: (page - 1) * limit,
   limit: Math.min(limit, 200),

@@ -344,9 +344,7 @@ export const createCustomer = asyncHandler(async (req, res) => {
 
   const ownerId = req.user.userId;
 
-  const phone = String(value.phone)
-    .trim()
-    .replace(/^(\+91|0091)/, "");
+  const phone = normalizeCustomerPhone(value.phone);
 
   const existing = await Customer.findOne({
     phone,
@@ -413,9 +411,7 @@ export const updateCustomer = asyncHandler(async (req, res) => {
   }
 
   if (value.phone) {
-    const phone = String(value.phone)
-      .trim()
-      .replace(/^(\+91|0091)/, "");
+    const phone = normalizeCustomerPhone(value.phone);
 
     const existing = await Customer.findOne({
       phone,

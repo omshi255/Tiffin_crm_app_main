@@ -40,15 +40,20 @@ export const resolveRoleForPhone = async (phone) => {
     return { role: "vendor", ownerId: null };
   }
 
+  // Create a regex to match the phone number ending with the 10-digit normalized number
+  // and allowing optional non-digits (like spaces or dashes) in between.
+  const regexPattern = normalized.split("").join("\\D*") + "$";
+  const phoneRegex = new RegExp(regexPattern);
+
   const [staff, customer] = await Promise.all([
     DeliveryStaff.findOne({
-      $or: [{ phone: normalized }, { phone: `0${normalized}` }],
+      phone: phoneRegex,
       isActive: true,
     })
       .select("ownerId userId")
       .lean(),
     Customer.findOne({
-      $or: [{ phone: normalized }, { phone: `0${normalized}` }],
+      phone: phoneRegex,
       isDeleted: { $ne: true },
       status: "active",
     })

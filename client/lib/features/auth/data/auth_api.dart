@@ -28,7 +28,7 @@ abstract final class AuthApi {
     throwIfNotSuccess(response);
   }
 
-  static Future<AuthResponseModel> verifyOtp(String phone, String otp) async {
+  static Future<AuthResponseModel> verifyOtp(String phone, String otp, {String? role}) async {
     final dio = Dio(
       BaseOptions(
         baseUrl: DioClient.instance.options.baseUrl,
@@ -38,7 +38,11 @@ abstract final class AuthApi {
     );
     final response = await dio.post(
       ApiEndpoints.verifyOtp,
-      data: {'phone': phone, 'otp': otp},
+      data: {
+        'phone': phone,
+        'otp': otp,
+        if (role != null) 'role': role,
+      },
       options: Options(
         headers: {
           'Content-Type': 'application/json',

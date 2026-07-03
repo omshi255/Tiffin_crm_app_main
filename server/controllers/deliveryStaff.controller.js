@@ -4,6 +4,7 @@ import DailyOrder from "../models/DailyOrder.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../class/apiResponseClass.js";
 import { ApiError } from "../class/apiErrorClass.js";
+import { normalizeCustomerPhone } from "../utils/normalizeCustomerPhone.js";
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
@@ -103,7 +104,7 @@ export const createStaff = asyncHandler(async (req, res) => {
   }
 
   const ownerId = req.user.userId;
-  const phone = String(value.phone).trim().replace(/^\+?91/, "");
+  const phone = normalizeCustomerPhone(value.phone);
 
   const existing = await DeliveryStaff.findOne({ ownerId, phone }).lean();
   if (existing) {
@@ -138,7 +139,7 @@ export const updateStaff = asyncHandler(async (req, res) => {
   const ownerId = req.user.userId;
 
   if (value.phone) {
-    const phone = String(value.phone).trim().replace(/^\+?91/, "");
+    const phone = normalizeCustomerPhone(value.phone);
     const duplicate = await DeliveryStaff.findOne({
       ownerId,
       phone,
