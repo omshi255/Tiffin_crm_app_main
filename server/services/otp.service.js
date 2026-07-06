@@ -80,6 +80,11 @@ export const sendOtp = async (phone) => {
  * Verify OTP using Twilio Verify
  */
 export const verifyOtp = async (phone, otp) => {
+  // Dev-bypass: Allow using '123456' as a test OTP in development mode
+  if (config.NODE_ENV === "development" && otp === "123456") {
+    return true;
+  }
+
   try {
     const client = getTwilioClient();
     if (!client) return false;

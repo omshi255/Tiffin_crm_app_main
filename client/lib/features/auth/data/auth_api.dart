@@ -8,66 +8,90 @@ import '../models/user_model.dart';
 
 abstract final class AuthApi {
   static Future<void> sendOtp(String phone) async {
-    final dio = Dio(
-      BaseOptions(
-        baseUrl: DioClient.instance.options.baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-      ),
-    );
-    final response = await dio.post(
-      ApiEndpoints.sendOtp,
-      data: {'phone': phone},
-      options: Options(
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      ),
-    );
-    throwIfNotSuccess(response);
+    try {
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: DioClient.instance.options.baseUrl,
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+      final response = await dio.post(
+        ApiEndpoints.sendOtp,
+        data: {'phone': phone},
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+      throwIfNotSuccess(response);
+    } on DioException catch (e) {
+      String? message;
+      final data = e.response?.data;
+      if (data is Map<String, dynamic>) {
+        message = data['message'] as String? ?? data['error'] as String?;
+      }
+      throw ApiException(
+        message ?? e.message ?? 'Failed to send OTP',
+        e.response?.statusCode,
+      );
+    }
   }
 
   static Future<AuthResponseModel> verifyOtp(String phone, String otp, {String? role}) async {
-    final dio = Dio(
-      BaseOptions(
-        baseUrl: DioClient.instance.options.baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-      ),
-    );
-    final response = await dio.post(
-      ApiEndpoints.verifyOtp,
-      data: {
-        'phone': phone,
-        'otp': otp,
-        if (role != null) 'role': role,
-      },
-      options: Options(
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
+    try {
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: DioClient.instance.options.baseUrl,
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+      final response = await dio.post(
+        ApiEndpoints.verifyOtp,
+        data: {
+          'phone': phone,
+          'otp': otp,
+          if (role != null) 'role': role,
         },
-      ),
-    );
-    final data = response.data;
-    if (data is! Map<String, dynamic>) throw ApiException('Invalid response');
-    // Support both { success, data: { accessToken, user } } and direct { accessToken, refreshToken, user }
-    Map<String, dynamic>? payload = data['data'] is Map<String, dynamic>
-        ? data['data'] as Map<String, dynamic>
-        : null;
-    if (payload == null && data['accessToken'] != null) {
-      payload = data;
-    }
-    if (payload == null) {
-      final success = data['success'] as bool? ?? false;
-      if (!success) {
-        final msg = data['message'] as String? ?? 'Verification failed';
-        throw ApiException(msg, response.statusCode);
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) throw ApiException('Invalid response');
+      // Support both { success, data: { accessToken, user } } and direct { accessToken, refreshToken, user }
+      Map<String, dynamic>? payload = data['data'] is Map<String, dynamic>
+          ? data['data'] as Map<String, dynamic>
+          : null;
+      if (payload == null && data['accessToken'] != null) {
+        payload = data;
       }
-      throw ApiException('Invalid response');
+      if (payload == null) {
+        final success = data['success'] as bool? ?? false;
+        if (!success) {
+          final msg = data['message'] as String? ?? 'Verification failed';
+          throw ApiException(msg, response.statusCode);
+        }
+        throw ApiException('Invalid response');
+      }
+      return AuthResponseModel.fromJson(payload);
+    } on DioException catch (e) {
+      String? message;
+      final data = e.response?.data;
+      if (data is Map<String, dynamic>) {
+        message = data['message'] as String? ?? data['error'] as String?;
+      }
+      throw ApiException(
+        message ?? e.message ?? 'Verification failed',
+        e.response?.statusCode,
+      );
     }
-    return AuthResponseModel.fromJson(payload);
   }
 
   static Future<AuthResponseModel?> refreshToken(String refreshToken) async {

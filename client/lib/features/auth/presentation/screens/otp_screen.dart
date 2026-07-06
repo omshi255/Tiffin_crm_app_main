@@ -234,7 +234,8 @@ class _OtpScreenState extends State<OtpScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() => _isVerifying = false);
       await _navigateAfterLogin(context, user);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('verifyOtp error: $e\n$stackTrace');
       if (mounted) {
         setState(() => _isVerifying = false);
         ErrorHandler.show(context, e);
