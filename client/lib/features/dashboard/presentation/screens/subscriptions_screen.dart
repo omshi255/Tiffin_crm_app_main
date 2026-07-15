@@ -1534,7 +1534,9 @@ class _AssignSubscriptionSheetState extends State<_AssignSubscriptionSheet> {
                             final d = await showDatePicker(
                               context: context,
                               initialDate: _startDate,
-                              firstDate: DateTime.now(),
+                              firstDate: DateTime.now().subtract(
+                                const Duration(days: 365),
+                              ),
                               lastDate: DateTime.now().add(
                                 const Duration(days: 365),
                               ),
@@ -1547,7 +1549,17 @@ class _AssignSubscriptionSheetState extends State<_AssignSubscriptionSheet> {
                                 child: child!,
                               ),
                             );
-                            if (d != null) setState(() => _startDate = d);
+                            if (d != null) {
+                              setState(() {
+                                _startDate = d;
+                                if (_endDate.isBefore(_startDate)) {
+                                  _endDate = _startDate.add(const Duration(days: 30));
+                                }
+                                if (_paymentDueDate.isBefore(_startDate)) {
+                                  _paymentDueDate = _startDate.add(const Duration(days: 5));
+                                }
+                              });
+                            }
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -1594,9 +1606,12 @@ class _AssignSubscriptionSheetState extends State<_AssignSubscriptionSheet> {
                         _label('End date'),
                         GestureDetector(
                           onTap: () async {
+                            final initial = _endDate.isBefore(_startDate)
+                                ? _startDate
+                                : _endDate;
                             final d = await showDatePicker(
                               context: context,
-                              initialDate: _endDate,
+                              initialDate: initial,
                               firstDate: _startDate,
                               lastDate: DateTime.now().add(
                                 const Duration(days: 365 * 2),
@@ -1758,10 +1773,13 @@ class _AssignSubscriptionSheetState extends State<_AssignSubscriptionSheet> {
                 _label('Payment due by'),
                 GestureDetector(
                   onTap: () async {
+                    final initial = _paymentDueDate.isBefore(_startDate)
+                        ? _startDate
+                        : _paymentDueDate;
                     final d = await showDatePicker(
                       context: context,
-                      initialDate: _paymentDueDate,
-                      firstDate: DateTime.now(),
+                      initialDate: initial,
+                      firstDate: _startDate,
                       lastDate:
                           DateTime.now().add(const Duration(days: 365 * 2)),
                       builder: (ctx, child) => Theme(

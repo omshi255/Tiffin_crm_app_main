@@ -415,6 +415,16 @@ final class AppRouter {
             builder: (context, state) =>
                 _PlaceholderScreen(routeLabel: 'Tier Details'),
           ),
+          GoRoute(
+            path: 'vendor-leave-inbox',
+            builder: (context, state) =>
+                const _PlaceholderScreen(routeLabel: 'Leaves Inbox'),
+          ),
+          GoRoute(
+            path: 'vendor-declare-holiday',
+            builder: (context, state) =>
+                const _PlaceholderScreen(routeLabel: 'Declare Holiday'),
+          ),
         ],
       ),
     ],

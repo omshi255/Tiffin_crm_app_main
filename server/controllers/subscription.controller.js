@@ -354,30 +354,22 @@ export const createSubscription = asyncHandler(async (req, res) => {
     customDays: value.customDays,
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  if (startDate < today) {
-    throw new ApiError(400, "Subscription start date cannot be in the past");
-  }
-
   if (endDate < startDate) {
     throw new ApiError(400, "End date must be after start date");
   }
 
-  // Block only if there's an actually-active subscription (not expired by endDate).
-  // This must align with customer-details `activePlan` logic (endDate >= now).
-  const now = new Date();
+  // Block overlapping subscriptions for the customer
   const existingActive = await Subscription.findOne({
     ownerId,
     customerId,
     status: { $in: ["active", "paused"] },
-    endDate: { $gte: now },
+    startDate: { $lte: endDate },
+    endDate: { $gte: startDate },
   });
 
   if (existingActive) {
-    console.log("❌ Active subscription already exists");
-    throw new ApiError(409, "Active subscription already exists for customer");
+    console.log("❌ Active subscription already exists in the given date range");
+    throw new ApiError(409, "Active subscription already exists for customer in the given date range");
   }
 
   const totalDays = totalDaysInclusiveIST(startDate, endDate);
@@ -479,8 +471,27 @@ export const createSubscription = asyncHandler(async (req, res) => {
 
   console.log("✅ Subscription Created:", subscription._id);
 
-  // Generate first day orders
-  await generateDailyOrdersForDate(ownerId, startDate);
+  // Generate daily orders for all dates from startDate up to min(endDate, max(startDate, today + 7 days))
+  const genStart = new Date(startDate);
+  const todayLocal = new Date();
+  todayLocal.setHours(0, 0, 0, 0);
+
+  const genEndLimit = new Date(todayLocal);
+  genEndLimit.setDate(genEndLimit.getDate() + 7);
+
+  const maxEnd = startDate > genEndLimit ? startDate : genEndLimit;
+  const genEnd = endDate < maxEnd ? endDate : maxEnd;
+
+  for (let d = new Date(genStart); d <= genEnd; d.setDate(d.getDate() + 1)) {
+    try {
+      await generateDailyOrdersForDate(ownerId, d);
+    } catch (err) {
+      console.error(
+        `Failed to generate daily orders for ${d.toISOString().slice(0, 10)}:`,
+        err.message
+      );
+    }
+  }
 
   const created = await Subscription.findById(subscription._id)
     .populate("customerId", "name phone address")

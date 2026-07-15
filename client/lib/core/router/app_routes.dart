@@ -42,4 +42,6 @@ abstract final class AppRoutes {
   static const String deliveryMap = '/delivery-map';
   static const String adminDashboard = '/admin-dashboard';
   static const String adminList = '/admin-list';
+  static const String vendorLeaveInbox = '/vendor-leave-inbox';
+  static const String vendorDeclareHoliday = '/vendor-declare-holiday';
 }

@@ -1335,6 +1335,9 @@ import '../../../delivery/data/delivery_api.dart';
 import '../../data/daily_items_api.dart';
 import '../../../orders/data/order_api.dart';
 import '../../../orders/models/order_status.dart';
+import '../../../../core/utils/error_handler.dart';
+import '../../../leave/models/leave_request_model.dart';
+import '../../../leave/data/leave_api.dart';
 
 /// Fixed width for each status pill in the horizontal "today's orders" strip.
 const double _kTodayOrdersTileWidth = 118;
@@ -1344,10 +1347,10 @@ const double _kTodayOrdersStripHeight = 128;
 
 // ── Semantic accent colors used across the dashboard ─────────────────────────
 // Defined once so dark/light variants stay consistent.
-const Color _kAccentGreen      = Color(0xFF1D9E75); // Total / Orders
-const Color _kAccentDeepGreen  = Color(0xFF0F6E56); // Delivered
-const Color _kAccentGold       = Color(0xFFBA7517); // Delivery staff / warning
-const Color _kAccentBlue       = Color(0xFF2563EB); // Out-for-delivery
+const Color _kAccentGreen = Color(0xFF1D9E75); // Total / Orders
+const Color _kAccentDeepGreen = Color(0xFF0F6E56); // Delivered
+const Color _kAccentGold = Color(0xFFBA7517); // Delivery staff / warning
+const Color _kAccentBlue = Color(0xFF2563EB); // Out-for-delivery
 
 enum _DailyItemsChip { all, veg, nonVeg }
 
@@ -1385,6 +1388,8 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
   _MealSlot _mealSlot = _MealSlot.all;
 
   final ScrollController _todayOrdersStripController = ScrollController();
+  bool _loadingLeaves = true;
+  List<LeaveRequestModel> _pendingLeaves = [];
 
   static String _greeting() {
     final hour = DateTime.now().hour;
@@ -1395,8 +1400,21 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
 
   static String _todayDate() {
     final now = DateTime.now();
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]} ${now.year}';
   }
 
@@ -1407,31 +1425,140 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
     _itemsDay = DateTime(n.year, n.month, n.day);
     _loadStats();
     _loadDailyItems();
+    _loadPendingLeaves();
     _attachDailyOrdersSocket();
     _overviewTabReselectedListener = () {
       if (!mounted) return;
       _loadStats();
       _loadDailyItems();
+      _loadPendingLeaves();
     };
-    overviewDashboardTabSelectedTick.addListener(_overviewTabReselectedListener!);
+    overviewDashboardTabSelectedTick.addListener(
+      _overviewTabReselectedListener!,
+    );
   }
 
   Future<void> _attachDailyOrdersSocket() async {
     await DeliveryTrackingSocket.instance.ensureConnected();
-    _dailyOrdersSocketSub =
-        DeliveryTrackingSocket.instance.dailyOrdersRefresh.listen((_) {
+    _dailyOrdersSocketSub = DeliveryTrackingSocket.instance.dailyOrdersRefresh
+        .listen((_) {
+          if (mounted) {
+            _loadStats();
+            _loadDailyItems();
+            _loadPendingLeaves();
+          }
+        });
+  }
+
+  Future<void> _loadPendingLeaves() async {
+    if (!mounted) return;
+    setState(() => _loadingLeaves = true);
+    try {
+      final res = await LeaveApi.getLeavesForVendor(
+        status: 'pending',
+        page: 1,
+        limit: 100,
+      );
+      final list = List<LeaveRequestModel>.from(res['leaves'] as Iterable);
       if (mounted) {
-        _loadStats();
-        _loadDailyItems();
+        setState(() {
+          _pendingLeaves = list;
+          _loadingLeaves = false;
+        });
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingLeaves = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) ErrorHandler.show(context, e);
+        });
+      }
+    }
+  }
+
+  Future<void> _handleDashboardLeaveApprove(LeaveRequestModel leave) async {
+    try {
+      await LeaveApi.updateLeaveStatus(leaveId: leave.id, status: 'approved');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Leave request approved successfully')),
+        );
+      }
+      _loadPendingLeaves();
+      _loadStats();
+      _loadDailyItems();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+      }
+    }
+  }
+
+  void _handleDashboardLeaveReject(LeaveRequestModel leave, ColorScheme cs) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Reject Leave Request'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: 'Enter reason (optional)',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 2,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: cs.onSurfaceVariant),
+              ),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await LeaveApi.updateLeaveStatus(
+                    leaveId: leave.id,
+                    status: 'rejected',
+                    rejectReason: controller.text.trim(),
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Leave request rejected')),
+                    );
+                  }
+                  _loadPendingLeaves();
+                  _loadStats();
+                  _loadDailyItems();
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.toString()}')),
+                    );
+                  }
+                }
+              },
+              style: FilledButton.styleFrom(backgroundColor: cs.error),
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
     if (_overviewTabReselectedListener != null) {
-      overviewDashboardTabSelectedTick
-          .removeListener(_overviewTabReselectedListener!);
+      overviewDashboardTabSelectedTick.removeListener(
+        _overviewTabReselectedListener!,
+      );
     }
     _dailyOrdersSocketSub?.cancel();
     _todayOrdersStripController.dispose();
@@ -1482,10 +1609,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
   Future<void> _onMealSlotSelected(_MealSlot slot) async {
     if (_mealSlot == slot || _itemsListLoading) return;
     setState(() => _mealSlot = slot);
-    await Future.wait<void>([
-      _loadDailyItems(),
-      _loadStats(),
-    ]);
+    await Future.wait<void>([_loadDailyItems(), _loadStats()]);
   }
 
   String _itemsPrepareTitle() {
@@ -1527,10 +1651,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
 
   // ── Filter pill ───────────────────────────────────────────────────────────
   // Uses colorScheme so it adapts to dark mode automatically.
-  Widget _filterPill({
-    required String label,
-    required VoidCallback? onTap,
-  }) {
+  Widget _filterPill({required String label, required VoidCallback? onTap}) {
     final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onTap,
@@ -1976,6 +2097,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
         await Future.wait<void>([
           _loadStats(),
           _loadDailyItems(),
+          _loadPendingLeaves(),
         ]);
       },
       child: SingleChildScrollView(
@@ -1989,7 +2111,6 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-
             // ── Greeting + Date pill ─────────────────────────
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2028,11 +2149,16 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                 const SizedBox(width: 12),
                 // Date pill — primary tint, works on both themes
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: cs.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
+                    border: Border.all(
+                      color: cs.primary.withValues(alpha: 0.15),
+                    ),
                   ),
                   child: Column(
                     children: [
@@ -2055,7 +2181,20 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                         ),
                       ),
                       Text(
-                        const ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][DateTime.now().month - 1],
+                        const [
+                          'Jan',
+                          'Feb',
+                          'Mar',
+                          'Apr',
+                          'May',
+                          'Jun',
+                          'Jul',
+                          'Aug',
+                          'Sep',
+                          'Oct',
+                          'Nov',
+                          'Dec',
+                        ][DateTime.now().month - 1],
                         style: TextStyle(
                           fontSize: 10,
                           color: cs.onSurfaceVariant,
@@ -2073,9 +2212,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
             // ── Today's orders (horizontal strip) ────────────
             Row(
               children: [
-                const Expanded(
-                  child: _SectionLabel(label: "Today's orders"),
-                ),
+                const Expanded(child: _SectionLabel(label: "Today's orders")),
                 TextButton(
                   onPressed: () => context.push(AppRoutes.delivery),
                   style: TextButton.styleFrom(
@@ -2146,23 +2283,27 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                             scrollbarTheme: ScrollbarThemeData(
                               thumbVisibility:
                                   const WidgetStatePropertyAll<bool>(true),
-                              thickness:
-                                  const WidgetStatePropertyAll<double>(3),
+                              thickness: const WidgetStatePropertyAll<double>(
+                                3,
+                              ),
                               radius: const Radius.circular(4),
                               crossAxisMargin: 0,
                               mainAxisMargin: 4,
-                              thumbColor: WidgetStateProperty.resolveWith(
-                                (states) {
-                                  if (states.contains(WidgetState.dragged)) {
-                                    return cs.primary;
-                                  }
-                                  return cs.primary.withValues(alpha: 0.45);
-                                },
+                              thumbColor: WidgetStateProperty.resolveWith((
+                                states,
+                              ) {
+                                if (states.contains(WidgetState.dragged)) {
+                                  return cs.primary;
+                                }
+                                return cs.primary.withValues(alpha: 0.45);
+                              }),
+                              trackColor: const WidgetStatePropertyAll<Color>(
+                                Colors.transparent,
                               ),
-                              trackColor: const WidgetStatePropertyAll<
-                                  Color>(Colors.transparent),
-                              trackBorderColor: const WidgetStatePropertyAll<
-                                  Color>(Colors.transparent),
+                              trackBorderColor:
+                                  const WidgetStatePropertyAll<Color>(
+                                    Colors.transparent,
+                                  ),
                             ),
                           ),
                           child: Scrollbar(
@@ -2177,7 +2318,10 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                               scrollDirection: Axis.horizontal,
                               primary: false,
                               padding: const EdgeInsets.fromLTRB(
-                                12, 12, 12, 10,
+                                12,
+                                12,
+                                12,
+                                10,
                               ),
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(
@@ -2325,7 +2469,9 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                               const SizedBox(height: 6),
                               _filterPill(
                                 label: _mealPillLabel(),
-                                onTap: _itemsListLoading ? null : _openMealFilterSheet,
+                                onTap: _itemsListLoading
+                                    ? null
+                                    : _openMealFilterSheet,
                               ),
                             ],
                           ),
@@ -2392,15 +2538,12 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _filteredDailyItems.length,
-                      separatorBuilder: (context, index) => Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: cs.outline,
-                      ),
+                      separatorBuilder: (context, index) =>
+                          Divider(height: 1, thickness: 1, color: cs.outline),
                       itemBuilder: (context, index) {
                         final row = _filteredDailyItems[index];
-                        final qtyLabel =
-                            'x ${row.totalQuantity} ${row.unit}'.trim();
+                        final qtyLabel = 'x ${row.totalQuantity} ${row.unit}'
+                            .trim();
                         return Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -2438,18 +2581,202 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
 
             const SizedBox(height: 20),
 
+            // ── Leave Requests Card ───────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: cs.outline),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Leave Requests',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        if (_pendingLeaves.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_pendingLeaves.length} pending',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: cs.primary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  if (_loadingLeaves)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_pendingLeaves.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 24,
+                        horizontal: 16,
+                      ),
+                      child: Center(
+                        child: Text(
+                          'No pending leave requests',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _pendingLeaves.length,
+                      separatorBuilder: (context, index) =>
+                          Divider(height: 1, thickness: 1, color: cs.outline),
+                      itemBuilder: (context, index) {
+                        final leave = _pendingLeaves[index];
+                        final formattedDate = DateFormat(
+                          'EEE, d MMM yyyy',
+                        ).format(leave.date);
+
+                        return Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    leave.customerName ?? 'Customer',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  Text(
+                                    formattedDate,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.restaurant_rounded,
+                                    size: 14,
+                                    color: cs.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Meal: ${leave.mealType.replaceAll('_', ' ').toUpperCase()}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  OutlinedButton(
+                                    onPressed: () =>
+                                        _handleDashboardLeaveReject(leave, cs),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: cs.error,
+                                      side: BorderSide(color: cs.error),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 4,
+                                      ),
+                                      minimumSize: const Size(60, 32),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Reject',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        _handleDashboardLeaveApprove(leave),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 4,
+                                      ),
+                                      minimumSize: const Size(60, 32),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Approve',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
             // ── Overview 3 stat cards ─────────────────────────
             const _SectionLabel(label: 'Overview'),
             const SizedBox(height: 10),
 
             if (_loading)
               Row(
-                children: List.generate(3, (i) => Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(left: i == 0 ? 0 : 10),
-                    child: const _ShimmerCard(),
+                children: List.generate(
+                  3,
+                  (i) => Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(left: i == 0 ? 0 : 10),
+                      child: const _ShimmerCard(),
+                    ),
                   ),
-                )),
+                ),
               )
             else
               Row(
@@ -2534,10 +2861,35 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
+                Expanded(
+                  child: _QuickActionTile(
+                    icon: Icons.date_range_outlined,
+                    label: 'Leaves Inbox',
+                    subtitle: 'Approve leaves',
+                    iconBg: AppColors.primary.withValues(alpha: 0.12),
+                    iconColor: AppColors.primary,
+                    onTap: () => context.push(AppRoutes.vendorLeaveInbox),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickActionTile(
+                    icon: Icons.beach_access_outlined,
+                    label: 'Declare Holiday',
+                    subtitle: 'Mark days off',
+                    iconBg: _kAccentGreen.withValues(alpha: 0.12),
+                    iconColor: _kAccentGreen,
+                    onTap: () => context.push(AppRoutes.vendorDeclareHoliday),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 const Expanded(child: SizedBox()),
               ],
             ),
-
           ],
         ),
       ),
@@ -2823,10 +3175,7 @@ class _QuickActionTile extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: cs.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
               ),
             ],
           ),
