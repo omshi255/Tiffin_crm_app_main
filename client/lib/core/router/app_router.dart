@@ -41,6 +41,7 @@ import '../../features/onboarding/presentation/screens/onboarding_screen.dart';
 import '../../models/customer_model.dart';
 import 'app_routes.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/leave/presentation/screens/vendor_leave_requests_screen.dart';
 
 final class AppRouter {
   AppRouter._();
@@ -417,13 +418,11 @@ final class AppRouter {
           ),
           GoRoute(
             path: 'vendor-leave-inbox',
-            builder: (context, state) =>
-                const _PlaceholderScreen(routeLabel: 'Leaves Inbox'),
+            builder: (context, state) => const VendorLeaveRequestsScreen(initialTabIndex: 0),
           ),
           GoRoute(
             path: 'vendor-declare-holiday',
-            builder: (context, state) =>
-                const _PlaceholderScreen(routeLabel: 'Declare Holiday'),
+            builder: (context, state) => const VendorLeaveRequestsScreen(initialTabIndex: 1),
           ),
         ],
       ),

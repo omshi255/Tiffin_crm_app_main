@@ -2604,25 +2604,37 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                             color: cs.onSurface,
                           ),
                         ),
-                        if (_pendingLeaves.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: cs.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${_pendingLeaves.length} pending',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: cs.primary,
+                        Row(
+                          children: [
+                            if (_pendingLeaves.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cs.primary.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '${_pendingLeaves.length} pending',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: cs.primary,
+                                  ),
+                                ),
                               ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                              onPressed: () => context.push(AppRoutes.vendorLeaveInbox),
+                              icon: const Icon(Icons.chevron_right_rounded),
+                              color: cs.onSurfaceVariant,
                             ),
-                          ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

@@ -63,12 +63,32 @@ const vendorPublicForCustomer = async (ownerId) => {
   };
 };
 
+const resolveCustomerId = async (req) => {
+  let customerId = req.user?.customerId;
+  if (!customerId && req.user?.phone) {
+    const normalized = String(req.user.phone).replace(/\D/g, "").slice(-10);
+    const cust = await Customer.findOne({
+      phone: new RegExp(normalized + "$"),
+      isDeleted: { $ne: true },
+    }).select("_id");
+    if (cust) customerId = cust._id.toString();
+  }
+  if (!customerId && (req.user?.role === "vendor" || req.user?.role === "admin")) {
+    const firstCust = await Customer.findOne({
+      ownerId: req.user.ownerId || req.user.userId,
+      isDeleted: { $ne: true },
+    }).select("_id");
+    if (firstCust) customerId = firstCust._id.toString();
+  }
+  return customerId;
+};
+
 /**
  * GET /api/v1/customer/me
  */
 export const getMyProfile = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) throw new ApiError(404, "Customer profile not found");
 
   const customer = await Customer.findOne({
     _id: customerId,
@@ -89,8 +109,8 @@ export const getMyProfile = asyncHandler(async (req, res) => {
  * Returns wallet + active subscription remaining balance.
  */
 export const getMyBalance = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) throw new ApiError(404, "Customer profile not found");
 
   const [customer, subscription] = await Promise.all([
     Customer.findOne({ _id: customerId, isDeleted: { $ne: true } })
@@ -200,8 +220,12 @@ export const updateMyProfile = asyncHandler(async (req, res) => {
  * Returns the customer's active or paused subscription with plan details.
  */
 export const getMyActivePlan = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "No active subscription", null));
+  }
 
   const subscription = await Subscription.findOne({
     customerId,
@@ -235,8 +259,18 @@ export const getMyActivePlan = asyncHandler(async (req, res) => {
  * Query: page, limit, status
  */
 export const getMyOrders = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) {
+    return res.status(200).json(
+      new ApiResponse(200, "Orders fetched", {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+      })
+    );
+  }
 
   const { error, value } = ordersQuerySchema.validate(req.query, {
     stripUnknown: true,
@@ -289,8 +323,16 @@ const notificationsQuerySchema = Joi.object({
  * Query: page, limit, isRead (optional)
  */
 export const getMyNotifications = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) {
+    return res.status(200).json(
+      new ApiResponse(200, "Notifications fetched", {
+        notifications: [],
+        unreadCount: 0,
+        pagination: { page: 1, limit: 20, total: 0, pages: 0 },
+      })
+    );
+  }
 
   const { error, value } = notificationsQuerySchema.validate(req.query, {
     stripUnknown: true,

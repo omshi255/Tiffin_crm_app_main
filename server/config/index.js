@@ -44,6 +44,11 @@ const optional = {
       process.env.RATE_LIMIT_MESSAGE ||
       "Too many requests, please try again later.",
   },
+  LEAVE_CUTOFFS: {
+    breakfast: process.env.LEAVE_CUTOFF_BREAKFAST || "09:30",
+    lunch: process.env.LEAVE_CUTOFF_LUNCH || "12:00",
+    dinner: process.env.LEAVE_CUTOFF_DINNER || "19:00",
+  },
 };
 
 for (const key of required) {
@@ -108,5 +113,10 @@ export default {
       Number(process.env.RATE_LIMIT_WINDOW_MS) || optional.RATE_LIMIT.windowMs,
     max: Number(process.env.RATE_LIMIT_MAX) || optional.RATE_LIMIT.max,
     message: process.env.RATE_LIMIT_MESSAGE || optional.RATE_LIMIT.message,
+  },
+  LEAVE_CUTOFFS: {
+    breakfast: process.env.LEAVE_CUTOFF_BREAKFAST || optional.LEAVE_CUTOFFS.breakfast,
+    lunch: process.env.LEAVE_CUTOFF_LUNCH || optional.LEAVE_CUTOFFS.lunch,
+    dinner: process.env.LEAVE_CUTOFF_DINNER || optional.LEAVE_CUTOFFS.dinner,
   },
 };

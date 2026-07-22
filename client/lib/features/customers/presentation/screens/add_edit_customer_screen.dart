@@ -245,7 +245,17 @@ class _AddEditCustomerScreenState extends State<AddEditCustomerScreen> {
                       }
                     },
                   ),
-
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openLocationPicker,
+                    icon: Icon(
+                      _hasMapPin ? Icons.location_on_rounded : Icons.add_location_alt_outlined,
+                      color: _hasMapPin ? cs.primary : cs.onSurfaceVariant,
+                    ),
+                    label: Text(
+                      _hasMapPin ? 'Location Pinned' : 'Pin Location on Map',
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),

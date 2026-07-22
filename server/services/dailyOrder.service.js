@@ -3,6 +3,7 @@ import Subscription from "../models/Subscription.model.js";
 import MealPlan from "../models/Plan.model.js";
 import Item from "../models/Item.model.js";
 import Customer from "../models/Customer.model.js";
+import LeaveRequest from "../models/LeaveRequest.model.js";
 import { payLaterWouldExceedCreditLimit } from "../utils/subscriptionPayLater.js";
 
 export const parseUTC = (d) => {
@@ -345,6 +346,18 @@ export const generateDailyOrdersForDate = async (ownerId, date) => {
     planMap[plan._id.toString()] = plan;
   }
 
+  // Fetch approved leaves covering the target date for these subscriptions
+  const startOfDay = new Date(day);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(day);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const approvedLeaves = await LeaveRequest.find({
+    subscriptionId: { $in: subscriptions.map((s) => s._id) },
+    leaveDate: { $gte: startOfDay, $lte: endOfDay },
+    status: "Approved",
+  }).lean();
+
   const toInsert = [];
   let skippedCreditLimit = 0;
   const orderRowsByPlanId = new Map();
@@ -382,13 +395,38 @@ export const generateDailyOrdersForDate = async (ownerId, date) => {
 
     const slotRows = await getRowsForPlan(plan);
 
+    const subLeaves = approvedLeaves.filter(
+      (l) => l.subscriptionId.toString() === sub._id.toString()
+    );
+
+    const isMealSkippedByLeave = (meal) => {
+      for (const leave of subLeaves) {
+        if (leave.mealType === "all" || leave.mealType === "both") {
+          return true;
+        }
+        if (leave.mealType === "breakfast" && (meal === "breakfast" || meal === "early_morning")) {
+          return true;
+        }
+        if (leave.mealType === "lunch" && meal === "lunch") {
+          return true;
+        }
+        if (leave.mealType === "dinner" && meal === "dinner") {
+          return true;
+        }
+      }
+      return false;
+    };
+
     let tentativeExtraForDay = 0;
     for (const row of slotRows) {
       const dedupeKey = `${sub._id.toString()}|${row.planMealSlot}`;
       if (existingSet.has(dedupeKey)) continue;
 
-      const rowAmt = Number(row.amount) || 0;
+      const isSkipped = isMealSkippedByLeave(row.mealType);
+      const rowAmt = isSkipped ? 0 : (Number(row.amount) || 0);
+
       if (
+        !isSkipped &&
         sub.payLater === true &&
         payLaterWouldExceedCreditLimit(sub, tentativeExtraForDay + rowAmt)
       ) {
@@ -399,7 +437,9 @@ export const generateDailyOrdersForDate = async (ownerId, date) => {
         continue;
       }
 
-      tentativeExtraForDay += rowAmt;
+      if (!isSkipped) {
+        tentativeExtraForDay += rowAmt;
+      }
 
       toInsert.push({
         ownerId,
@@ -413,7 +453,8 @@ export const generateDailyOrdersForDate = async (ownerId, date) => {
         deliverySlot: sub.deliverySlot,
         resolvedItems: row.resolvedItems,
         amount: row.amount,
-        status: "pending",
+        status: isSkipped ? "skipped" : "pending",
+        ...(isSkipped && { cancellationReason: "Leave Approved", cancelledAt: new Date() }),
       });
       existingSet.add(dedupeKey);
     }
@@ -451,7 +492,7 @@ export const getTodayDailyOrders = async (ownerId, filters = {}) => {
   const base = {
     ownerId,
     orderDate: today,
-    status: { $ne: "cancelled" },
+    status: { $nin: ["cancelled", "skipped"] },
   };
 
   applyVendorDashboardOrderScope(base, scope);

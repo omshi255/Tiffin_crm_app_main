@@ -22,6 +22,7 @@ import vendorCustomerTiffinRoutes from "./vendorCustomerTiffin.routes.js";
 import vendorDashboardRoutes from "./vendorDashboard.routes.js";
 import vendorFinanceRoutes from "./vendorFinance.routes.js";
 import financeRoutes from "./finance.js";
+import leaveRoutes from "./leave.routes.js";
 
 const router = Router();
 
@@ -48,5 +49,6 @@ router.use("/expenses", expenseRoutes);
 router.use("/incomes", incomeRoutes);
 router.use("/send-notification", sendNotificationRoutes);
 router.use("/", financeRoutes);
+router.use("/leave", leaveRoutes);
 
 export default router;

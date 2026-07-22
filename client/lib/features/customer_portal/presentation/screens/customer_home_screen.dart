@@ -22,6 +22,7 @@ import '../../../dashboard/data/notification_api.dart';
 import '../../../auth/data/auth_api.dart';
 import '../../../orders/data/order_api.dart';
 import '../../../orders/models/order_status.dart';
+import '../../../leave/presentation/screens/customer_leave_requests_screen.dart';
 
 // ── iMeals Green + Violet palette ────────────────────────────────────────────
 const _green900 = Color(0xFF064E3B);
@@ -721,6 +722,83 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
             walletBalance,
             subscriptionBalance,
             showNoChargeHint: showNoChargeHint,
+          ),
+
+          const SizedBox(height: 20),
+          _sectionLabel('Quick Actions'),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _border),
+              boxShadow: [
+                BoxShadow(
+                  color: _green900.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => const CustomerLeaveRequestsScreen(),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _violet50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _violet100),
+                        ),
+                        child: const Icon(
+                          Icons.event_busy_rounded,
+                          color: _violet600,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'My Leave Requests',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: _text1,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Submit or track your vacation/leave requests',
+                              style: TextStyle(fontSize: 12, color: _text2),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: _text2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
 
           // ── Low balance warning ───────────────────────────────────────────

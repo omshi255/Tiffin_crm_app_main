@@ -718,8 +718,6 @@ extension _DrawerColors on BuildContext {
   // Text
   Color get textPrimary =>
       _isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1A0E45);
-  Color get textSecondary =>
-      _isDark ? const Color(0xFF94A3B8) : const Color(0xFF7B6DAB);
 
   // Divider
   Color get dividerColor =>
@@ -877,6 +875,11 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     icon: Icons.edit_note_rounded,
                     label: 'Standard Meal Plans',
                     onTap: () => _go(AppRoutes.mealPlans),
+                  ),
+                  _Item(
+                    icon: Icons.event_busy_rounded,
+                    label: 'Leave Requests',
+                    onTap: () => _go(AppRoutes.vendorLeaveInbox),
                   ),
 
                   _Divider(color: context.dividerColor),

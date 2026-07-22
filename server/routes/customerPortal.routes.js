@@ -17,7 +17,7 @@ import { requireRole } from "../middleware/rbac.middleware.js";
 const router = Router();
 
 router.use(authMiddleware);
-router.use(requireRole(["customer"]));
+router.use(requireRole(["customer", "vendor", "admin"]));
 
 router.get("/me", getMyProfile);
 router.get("/me/balance", getMyBalance);

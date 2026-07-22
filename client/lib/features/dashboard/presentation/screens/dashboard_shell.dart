@@ -42,9 +42,6 @@ extension _ShellColors on BuildContext {
       _isDark ? const Color(0xFF9B6AF0) : AppColors.bottomNavSelected;
   Color get navUnselected =>
       _isDark ? const Color(0xFF94A3B8) : AppColors.bottomNavUnselected;
-
-  // AppBar bottom separator line
-  Color get appBarBottomLine => Colors.white.withValues(alpha: 0.12);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
