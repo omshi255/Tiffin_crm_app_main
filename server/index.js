@@ -51,23 +51,37 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // ─── startup ──────────────────────────────────────────────────────────────────
+// Listen first. Waiting for MongoDB before listen makes Render hold the login
+// request with no response, and the app times out after 30 seconds.
 
-connectMongoDB()
-  .then(() => {
-    startDeliveryCron();
-    startSubscriptionExpiryCron();
-    initDeliverySocket(io);
+app.on("error", (error) => {
+  console.error(`App error: ${error}`);
+});
 
-    app.on("error", (error) => {
-      console.error(`App error: ${error}`);
-      throw error;
-    });
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server listening on port ${PORT}`);
+});
 
-    httpServer.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server listening on port ${PORT}`);
-    });
-  })
-  .catch((error) => {
-    console.error(`DB connection failed: ${error}`);
-    process.exit(1);
-  });
+let backgroundJobsStarted = false;
+
+async function connectAndStartJobs() {
+  for (;;) {
+    try {
+      await connectMongoDB();
+      if (!backgroundJobsStarted) {
+        startDeliveryCron();
+        startSubscriptionExpiryCron();
+        initDeliverySocket(io);
+        backgroundJobsStarted = true;
+      }
+      console.log("Database ready");
+      return;
+    } catch (error) {
+      const reason = error?.message || error;
+      console.error(`DB connection failed: ${reason}. Retrying in 10s`);
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+    }
+  }
+}
+
+connectAndStartJobs();

@@ -49,6 +49,18 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Answer immediately while the database is still connecting. Otherwise login
+// sits with no bytes until the phone gives up.
+app.use((req, res, next) => {
+  if (req.path === "/health" || mongoose.connection.readyState === 1) {
+    return next();
+  }
+  res.status(503).json({
+    success: false,
+    message: "Server is starting. Please try again in a few seconds.",
+  });
+});
+
 if (config.NODE_ENV !== "development") {
   app.use(rateLimit(config.RATE_LIMIT));
 }

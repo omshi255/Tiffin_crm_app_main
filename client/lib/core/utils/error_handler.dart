@@ -22,7 +22,18 @@ abstract final class ErrorHandler {
         error.toString().contains('SocketException')) {
       message = 'No internet connection.';
     }
-    AppSnackbar.error(context, message);
+    AppSnackbar.error(context, _friendly(message));
+  }
+
+  static String _friendly(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('took longer than') || lower.contains('timeout')) {
+      return 'The server took too long to answer. Wait a few seconds and tap Continue again.';
+    }
+    if (lower.contains('server is starting')) {
+      return 'The server is waking up. Wait a few seconds and tap Continue again.';
+    }
+    return message;
   }
 }
 

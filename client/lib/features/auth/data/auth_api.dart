@@ -14,8 +14,8 @@ abstract final class AuthApi {
       final dio = Dio(
         BaseOptions(
           baseUrl: DioClient.instance.options.baseUrl,
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
+          connectTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
         ),
       );
       final response = await dio.post(
@@ -58,8 +58,8 @@ abstract final class AuthApi {
       final dio = Dio(
         BaseOptions(
           baseUrl: DioClient.instance.options.baseUrl,
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
+          connectTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
         ),
       );
       final response = await dio.post(

@@ -28,8 +28,8 @@ final class DioClient {
     final dio = Dio(
       BaseOptions(
         baseUrl: AppConfig.baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
         headers: <String, dynamic>{
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -151,6 +151,20 @@ final class DioClient {
 
   static void setNavigatorKey(GlobalKey<NavigatorState> key) {
     _navigatorKey = key;
+  }
+
+  /// Wakes a hosted server that has gone idle. Safe to call without awaiting.
+  static Future<void> warmUp() async {
+    try {
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: AppConfig.socketOrigin,
+          connectTimeout: const Duration(seconds: 20),
+          receiveTimeout: const Duration(seconds: 20),
+        ),
+      );
+      await dio.get('/health');
+    } catch (_) {}
   }
 }
 

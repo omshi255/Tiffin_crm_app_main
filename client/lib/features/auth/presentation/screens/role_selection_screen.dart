@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
+import '../../../../core/network/dio_client.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/widgets/language_picker.dart';
 import '../../../../l10n/app_lang.dart';
@@ -44,6 +45,12 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   ];
 
   String? _selectedRoleKey;
+
+  @override
+  void initState() {
+    super.initState();
+    DioClient.warmUp();
+  }
 
   void _onRoleTap(String roleKey) async {
     if (_selectedRoleKey != null) return; // Prevent double taps
