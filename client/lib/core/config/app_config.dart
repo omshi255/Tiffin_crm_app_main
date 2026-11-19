@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 abstract final class AppConfig {
-  // Set to true for local backend (e.g. http://localhost:5800), false for Render.
-  static const bool useLocalApi = true;
+  // Set to true for local backend (e.g. http://localhost:5000), false for Render.
+  static const bool useLocalApi = false;
 
   static const String apiUrlLocal = 'http://localhost:5000/api/v1';
 
