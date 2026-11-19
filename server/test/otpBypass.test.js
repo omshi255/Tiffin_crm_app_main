@@ -10,9 +10,13 @@ import {
   verifyRefreshToken,
 } from "../services/token.service.js";
 
-test("OTP bypass is refused in production and when the flag is off", () => {
+test("OTP bypass follows OTP_BYPASS_MODE, including production", () => {
   assert.equal(
     resolveOtpBypassMode({ NODE_ENV: "production", OTP_BYPASS_MODE: "true" }),
+    true
+  );
+  assert.equal(
+    resolveOtpBypassMode({ NODE_ENV: "production", OTP_BYPASS_MODE: "false" }),
     false
   );
   assert.equal(

@@ -58,15 +58,6 @@ for (const key of required) {
   }
 }
 
-if (
-  String(process.env.OTP_BYPASS_MODE || "").trim().toLowerCase() === "true" &&
-  (process.env.NODE_ENV || "development") === "production"
-) {
-  console.warn(
-    "OTP_BYPASS_MODE=true is ignored because NODE_ENV is production"
-  );
-}
-
 export default {
   PORT: Number(process.env.PORT) || optional.PORT,
   NODE_ENV: process.env.NODE_ENV || optional.NODE_ENV,

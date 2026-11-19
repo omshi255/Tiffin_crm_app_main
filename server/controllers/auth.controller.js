@@ -235,8 +235,8 @@ async function loginWithOtpBypass(req, res, phone, requestedRole) {
 /**
  * POST /api/v1/auth/send-otp
  * Body: { phone: "9876543210" }
- * When OTP_BYPASS_MODE is on (and NODE_ENV is not production), this logs the
- * user in directly and does not call Twilio. Otherwise it sends an OTP.
+ * When OTP_BYPASS_MODE is on, this logs the user in directly and does not
+ * call Twilio. Otherwise it sends an OTP.
  */
 export const sendOtpController = asyncHandler(async (req, res, next) => {
   const { error, value } = sendOtpSchema.validate(req.body, {

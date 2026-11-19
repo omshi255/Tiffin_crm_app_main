@@ -1,10 +1,7 @@
 /**
- * Direct phone login is allowed only outside production, and only when the
- * flag is explicitly true. Production ignores the flag.
+ * Phone login skips SMS when OTP_BYPASS_MODE=true.
+ * Set OTP_BYPASS_MODE=false to turn the OTP step back on.
  */
 export function resolveOtpBypassMode(env = process.env) {
-  const nodeEnv = env.NODE_ENV || "development";
-  const requested =
-    String(env.OTP_BYPASS_MODE ?? "").trim().toLowerCase() === "true";
-  return requested && nodeEnv !== "production";
+  return String(env.OTP_BYPASS_MODE ?? "").trim().toLowerCase() === "true";
 }
