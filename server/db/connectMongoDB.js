@@ -6,6 +6,7 @@ import { installStandaloneTransactionFallback } from "../utils/mongoSession.js";
 // Atlas shard addresses are IPv4. Node on Render tries IPv6 first and then
 // never finishes connecting, so login stays on "Server is starting".
 dns.setDefaultResultOrder("ipv4first");
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 let lastDbError = "";
 
@@ -33,7 +34,13 @@ const connectMongoDB = async () => {
     await installStandaloneTransactionFallback();
     return;
   } catch (error) {
-    lastDbError = String(error?.message || error).split("\n")[0];
+    const servers = error?.reason?.servers;
+    const inner = servers && typeof servers.values === "function"
+      ? [...servers.values()].map((server) => server?.error?.message).find(Boolean)
+      : "";
+    lastDbError = [String(error?.message || error).split("\n")[0], inner && String(inner).split("\n")[0]]
+      .filter(Boolean)
+      .join(" | ");
     console.error(`MongoDB connection error: ${lastDbError}`);
     if (mongoose.connection.readyState !== 0) {
       await mongoose.disconnect().catch(() => {});
