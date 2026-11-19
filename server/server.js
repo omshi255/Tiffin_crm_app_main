@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 
 import config from "./config/index.js";
+import { getDbError } from "./db/connectMongoDB.js";
 import requestId from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import routes from "./routes/index.js";
@@ -42,10 +43,12 @@ app.use(helmet());
 
 app.get("/health", (req, res) => {
   const dbConnected = mongoose.connection.readyState === 1;
+  const dbError = getDbError().replace(/mongodb(\+srv)?:\/\/\S+/gi, "mongodb://***");
   res.status(dbConnected ? 200 : 503).json({
     status: dbConnected ? "ok" : "degraded",
     uptime: process.uptime(),
     db: dbConnected ? "connected" : "disconnected",
+    ...(dbError ? { dbError } : {}),
   });
 });
 

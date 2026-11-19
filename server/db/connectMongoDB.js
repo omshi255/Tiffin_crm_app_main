@@ -1,6 +1,17 @@
+import dns from "node:dns";
 import mongoose from "mongoose";
 import config from "../config/index.js";
 import { installStandaloneTransactionFallback } from "../utils/mongoSession.js";
+
+// Atlas shard addresses are IPv4. Node on Render tries IPv6 first and then
+// never finishes connecting, so login stays on "Server is starting".
+dns.setDefaultResultOrder("ipv4first");
+
+let lastDbError = "";
+
+export function getDbError() {
+  return lastDbError;
+}
 
 // Don't queue API calls while the database is still connecting. Those calls
 // would sit until the client times out. Routes answer 503 instead.
@@ -9,7 +20,8 @@ mongoose.set("bufferCommands", false);
 const connectOptions = {
   autoIndex: config.NODE_ENV !== "production",
   maxPoolSize: 10,
-  serverSelectionTimeoutMS: 8000,
+  serverSelectionTimeoutMS: 20000,
+  family: 4,
 };
 
 const connectMongoDB = async () => {
@@ -17,10 +29,15 @@ const connectMongoDB = async () => {
     const conn = await mongoose.connect(config.MONGODB_URL, connectOptions);
 
     console.log(`MongoDB connected => ${conn.connection.host}`);
+    lastDbError = "";
     await installStandaloneTransactionFallback();
     return;
   } catch (error) {
-    console.error(`MongoDB connection error: ${error.message}`);
+    lastDbError = String(error?.message || error).split("\n")[0];
+    console.error(`MongoDB connection error: ${lastDbError}`);
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect().catch(() => {});
+    }
 
     // Local fallback is for this computer only. On Render it adds another
     // failed wait before the process gives up, which is what makes login hang.
