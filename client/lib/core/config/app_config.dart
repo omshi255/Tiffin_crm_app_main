@@ -9,7 +9,7 @@ abstract final class AppConfig {
   /// Phone and emulator cannot use localhost. This is this computer's Wi-Fi address.
   static const String apiUrlLan = 'http://10.28.100.92:5000/api/v1';
   static const String apiUrlProduction =
-      'https://tiffin-crm-app-main-1.onrender.com/api/v1';
+      'https://tiffin-crm-app-main-4g70.onrender.com/api/v1';
 
   static String get baseUrl {
     if (!useLocalApi) return apiUrlProduction;
