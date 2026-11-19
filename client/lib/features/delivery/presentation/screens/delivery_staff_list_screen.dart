@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../data/delivery_api.dart';
 import '../../models/delivery_staff_model.dart';
 
@@ -321,15 +322,15 @@ class _DeliveryStaffListScreenState extends State<DeliveryStaffListScreen> {
   );
 
   // ── Staff list ────────────────────────────────────────────────────────────
-  Widget _buildList(bool isDark) => ListView.builder(
+  Widget _buildList(bool isDark) => PagedListView<DeliveryStaffModel>(
     padding: EdgeInsets.fromLTRB(
       16,
       16,
       16,
       MediaQuery.of(context).padding.bottom + 100,
     ),
-    itemCount: _staff.length,
-    itemBuilder: (context, index) => _buildStaffCard(_staff[index], isDark),
+    items: _staff,
+    itemBuilder: (context, staff, index) => _buildStaffCard(staff, isDark),
   );
 
   // ── Staff card ────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/auth/auth_session.dart';
 import '../../../../core/utils/app_snackbar.dart';
@@ -7,6 +8,8 @@ import '../../../../core/utils/error_handler.dart';
 import '../../../auth/data/auth_api.dart';
 import '../../../auth/models/user_model.dart';
 import '../../data/delivery_api.dart';
+import '../../../../core/widgets/language_picker.dart';
+import '../../../../l10n/app_lang.dart';
 
 class DeliveryProfileScreen extends StatefulWidget {
   const DeliveryProfileScreen({super.key});
@@ -17,17 +20,17 @@ class DeliveryProfileScreen extends StatefulWidget {
 
 class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
   // ── Violet palette ────────────────────────────────────────────────────────
-  static const _violet900 = Color(0xFF2D1B69);
-  static const _violet700 = Color(0xFF4C2DB8);
-  static const _violet600 = Color(0xFF5B35D5);
-  static const _violet100 = Color(0xFFEDE8FD);
-  static const _violet50 = Color(0xFFF5F2FF);
-  static const _bg = Color(0xFFF6F4FF);
+  static const _violet900 = Color(0xFF3B1578);
+  static const _violet700 = AppColors.primary;
+  static const _violet600 = AppColors.primary;
+  static const _violet100 = Color(0xFFEDE9FE);
+  static const _violet50 = Color(0xFFF5F3FF);
+  static const _bg = Color(0xFFF8FAFC);
   static const _surface = Color(0xFFFFFFFF);
-  static const _border = Color(0xFFE4DFF7);
-  static const _divider = Color(0xFFEEEBFA);
-  static const _textPrimary = Color(0xFF1A0E45);
-  static const _textSecondary = Color(0xFF7B6DAB);
+  static const _border = Color(0xFFE2E8F0);
+  static const _divider = Color(0xFFF1F5F9);
+  static const _textPrimary = AppColors.textPrimary;
+  static const _textSecondary = AppColors.textSecondary;
   static const _success = Color(0xFF0F7B0F);
   static const _successSoft = Color(0xFFE6F4EA);
   static const _danger = Color(0xFFD93025);
@@ -141,18 +144,21 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
             const SizedBox(height: 24),
 
             // ── Availability section ────────────────────────────────────────
-            _sectionLabel('Availability'),
+            _sectionLabel(tr('availability')),
             const SizedBox(height: 10),
             _buildAvailabilityCard(u),
             const SizedBox(height: 24),
 
             // ── Info section ────────────────────────────────────────────────
             if (u != null) ...[
-              _sectionLabel('Account Info'),
+              _sectionLabel(tr('accountInfo')),
               const SizedBox(height: 10),
               _buildInfoCard(u),
               const SizedBox(height: 32),
             ],
+
+            const LanguagePickerTile(),
+            const SizedBox(height: 12),
 
             // ── Logout ──────────────────────────────────────────────────────
             InkWell(
@@ -184,8 +190,8 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                       ),
                     ),
                     const SizedBox(width: 14),
-                    const Text(
-                      'Logout',
+                    Text(
+                      tr('logout'),
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

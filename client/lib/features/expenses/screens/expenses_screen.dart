@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/app_snackbar.dart';
 import '../../../core/utils/error_handler.dart';
+import '../../../core/widgets/app_list_pager.dart';
 import '../data/expense_api.dart';
 import '../models/expense_model.dart';
 
@@ -108,9 +109,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   final _searchCtrl = TextEditingController();
   List<ExpenseModel> _items = [];
   bool _loading = true;
-  bool _loadingMore = false;
   int _page = 1;
-  static const int _pageSize = 20;
+  static const int _pageSize = kListPageSize;
   int _total = 0;
 
   Map<String, dynamic>? _summary;
@@ -188,54 +188,20 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       }
       if (!mounted) return;
       setState(() {
-        _items = reset ? res.items : [..._items, ...res.items];
+        _items = res.items;
         _total = res.total;
         if (sum != null) _summary = sum;
         _loading = false;
-        _loadingMore = false;
       });
     } catch (e) {
       if (mounted) {
         ErrorHandler.show(context, e);
-        setState(() {
-          _loading = false;
-          _loadingMore = false;
-        });
+        setState(() => _loading = false);
       }
     }
   }
 
   Future<void> _refresh() => _load(reset: true);
-
-  Future<void> _loadMore() async {
-    if (_loadingMore || _items.length >= _total) return;
-    setState(() => _loadingMore = true);
-    _page += 1;
-    try {
-      final (df, dt) = _dateQuery();
-      final res = await ExpenseApi.list(
-        page: _page,
-        limit: _pageSize,
-        category: _categoryFilter,
-        dateFrom: df,
-        dateTo: dt,
-        search: _searchCtrl.text.trim().isEmpty
-            ? null
-            : _searchCtrl.text.trim(),
-      );
-      if (!mounted) return;
-      setState(() {
-        _items = [..._items, ...res.items];
-        _loadingMore = false;
-      });
-    } catch (e) {
-      if (mounted) {
-        _page -= 1;
-        ErrorHandler.show(context, e);
-        setState(() => _loadingMore = false);
-      }
-    }
-  }
 
   Future<void> _confirmDelete(ExpenseModel e) async {
     final ok = await showDialog<bool>(
@@ -302,14 +268,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         : RefreshIndicator(
             color: AppColors.primary,
             onRefresh: _refresh,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n.metrics.pixels > n.metrics.maxScrollExtent - 120) {
-                  _loadMore();
-                }
-                return false;
-              },
-              child: ListView(
+            child: ListView(
                 padding: EdgeInsets.fromLTRB(
                   16,
                   12,
@@ -338,16 +297,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     const SizedBox(height: 8),
                     ..._items.map((e) => _expenseTile(e, isDark)),
                   ],
-                  if (_loadingMore)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
+                  AppListPager(
+                    page: _page,
+                    total: _total,
+                    pageSize: _pageSize,
+                    onPage: (p) {
+                      setState(() => _page = p);
+                      _load();
+                    },
+                  ),
                 ],
               ),
-            ),
           );
 
     return Scaffold(

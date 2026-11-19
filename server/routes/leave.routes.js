@@ -7,6 +7,7 @@ import {
   approveLeave,
   rejectLeave,
   getLeaveHistory,
+  getLeaveSummary,
 } from "../controllers/leave.controller.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/rbac.middleware.js";
@@ -30,5 +31,6 @@ router.put("/:id/reject", requireRole(["vendor", "admin", "customer"]), rejectLe
 
 // Common history endpoint
 router.get("/history", requireRole(["vendor", "admin", "customer"]), getLeaveHistory);
+router.get("/summary", requireRole(["vendor", "admin", "customer"]), getLeaveSummary);
 
 export default router;

@@ -89,7 +89,7 @@ test("leaveValidation: isCutoffExceeded at 11:00 AM IST", () => {
   try {
     // Today's leaves
     assert.equal(isCutoffExceeded("2026-07-21", "breakfast"), true, "Breakfast today at 11:00 AM is exceeded");
-    assert.equal(isCutoffExceeded("2026-07-21", "lunch"), false, "Lunch today at 11:00 AM is NOT exceeded");
+    assert.equal(isCutoffExceeded("2026-07-21", "lunch"), true, "Lunch today at 11:00 AM is exceeded");
     assert.equal(isCutoffExceeded("2026-07-21", "dinner"), false, "Dinner today at 11:00 AM is NOT exceeded");
     assert.equal(isCutoffExceeded("2026-07-21", "all"), true, "All meals today at 11:00 AM is exceeded (because breakfast is exceeded)");
 
@@ -392,7 +392,7 @@ test("Integration: requestLeave throws ApiError when date is in the past", async
 
 test("Integration: requestLeave throws ApiError when duplicate request exists", async () => {
   const originalSubscriptionFindOne = Subscription.findOne;
-  const originalLeaveRequestFindOne = LeaveRequest.findOne;
+  const originalLeaveRequestFind = LeaveRequest.find;
 
   const mockSubId = new mongoose.Types.ObjectId();
   const mockCustomerId = new mongoose.Types.ObjectId();
@@ -405,16 +405,18 @@ test("Integration: requestLeave throws ApiError when duplicate request exists", 
     status: "active",
   });
 
-  // Mock finding an existing leave on the same day
-  LeaveRequest.findOne = async () => ({
-    _id: new mongoose.Types.ObjectId(),
-    status: "Pending",
-  });
+  LeaveRequest.find = async () => ([
+    {
+      _id: new mongoose.Types.ObjectId(),
+      status: "Pending",
+      mealType: "lunch",
+    },
+  ]);
 
   const req = {
     user: { customerId: mockCustomerId.toString() },
     body: {
-      leaveDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // tomorrow
+      leaveDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       mealType: "lunch",
       reason: "Already submitted",
     },
@@ -430,10 +432,10 @@ test("Integration: requestLeave throws ApiError when duplicate request exists", 
     await requestLeave(req, res, next);
     assert.ok(errorThrown, "Should have passed duplicate error to next");
     assert.equal(errorThrown.statusCode, 400);
-    assert.match(errorThrown.message, /A leave request already exists/);
+    assert.match(errorThrown.message, /leave request already exists/);
   } finally {
     Subscription.findOne = originalSubscriptionFindOne;
-    LeaveRequest.findOne = originalLeaveRequestFindOne;
+    LeaveRequest.find = originalLeaveRequestFind;
   }
 });
 

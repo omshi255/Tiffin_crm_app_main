@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../customers/data/customer_api.dart';
 import '../../../payments/data/invoice_api.dart';
 import '../../../payments/models/invoice_model.dart';
@@ -50,6 +52,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   List<InvoiceModel> _invoices = [];
   bool _loading = true;
   String? _statusFilter;
+  int _page = 1;
+  int _total = 0;
+  static const int _pageSize = kListPageSize;
 
   @override
   void initState() {
@@ -61,11 +66,18 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final list = await InvoiceApi.list(
-        limit: 50,
+      final result = await InvoiceApi.list(
+        page: _page,
+        limit: _pageSize,
         paymentStatus: _statusFilter,
       );
-      if (mounted) setState(() => _invoices = list);
+      if (mounted) {
+        setState(() {
+          _invoices = result.items;
+          _total = result.total;
+          _page = result.page;
+        });
+      }
     } catch (e) {
       if (mounted) ErrorHandler.show(context, e);
     } finally {
@@ -185,6 +197,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             initialValue: _statusFilter,
             onSelected: (v) => setState(() {
               _statusFilter = v;
+              _page = 1;
               _load();
             }),
             itemBuilder: (_) => [
@@ -229,6 +242,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             GestureDetector(
                               onTap: () => setState(() {
                                 _statusFilter = null;
+                                _page = 1;
                                 _load();
                               }),
                               child: const Icon(
@@ -276,8 +290,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         16,
                         MediaQuery.of(context).padding.bottom + 100,
                       ),
-                      itemCount: _invoices.length,
-                      itemBuilder: (ctx, i) => _buildInvoiceCard(_invoices[i]),
+                      itemCount: _invoices.length + (_total > _pageSize ? 1 : 0),
+                      itemBuilder: (ctx, i) {
+                        if (i >= _invoices.length) {
+                          return AppListPager(
+                            page: _page,
+                            total: _total,
+                            pageSize: _pageSize,
+                            onPage: (p) {
+                              setState(() => _page = p);
+                              _load();
+                            },
+                          );
+                        }
+                        return _buildInvoiceCard(_invoices[i]);
+                      },
                     ),
             ),
     );
@@ -366,13 +393,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   // ── Invoice card ──────────────────────────────────────────────────────────
   Widget _buildInvoiceCard(InvoiceModel inv) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final invNum = inv.id.length > 8
-        ? inv.id.substring(inv.id.length - 8)
-        : inv.id;
+    final invNum = _invoiceLabel(inv);
     final (statusColor, statusBg, statusLabel) = _statusMeta(inv.status);
     final fmtDate = inv.dueDate != null
         ? '${inv.dueDate!.day.toString().padLeft(2, '0')}/${inv.dueDate!.month.toString().padLeft(2, '0')}/${inv.dueDate!.year}'
-        : null;
+        : _invoicePeriod(inv);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -435,7 +460,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'INV-$invNum',
+                                invNum,
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w800,
@@ -463,7 +488,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      'Due $fmtDate',
+                                      inv.dueDate != null ? 'Due $fmtDate' : fmtDate,
                                       style: TextStyle(
                                         fontSize: 11,
                                         color: isDark ? _D.textSecondary : _textSecondary,
@@ -575,13 +600,12 @@ class _InvoiceDetailSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final invNum = inv.id.length > 8
-        ? inv.id.substring(inv.id.length - 8)
-        : inv.id;
+    final invNum = _invoiceLabel(inv);
     final (statusColor, statusBg, statusLabel) = _statusMeta(inv.status);
     final fmtDate = inv.dueDate != null
         ? '${inv.dueDate!.day.toString().padLeft(2, '0')}/${inv.dueDate!.month.toString().padLeft(2, '0')}/${inv.dueDate!.year}'
         : null;
+    final period = _invoicePeriod(inv);
 
     return Container(
       decoration: BoxDecoration(
@@ -635,7 +659,7 @@ class _InvoiceDetailSheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'INV-$invNum',
+                      invNum,
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -682,6 +706,10 @@ class _InvoiceDetailSheet extends StatelessWidget {
 
           // Details grid
           _row('Amount', 'Rs.${inv.amount.toStringAsFixed(0)}', isDark),
+          if (period != null) ...[
+            const SizedBox(height: 8),
+            _row('Period', period, isDark),
+          ],
           const SizedBox(height: 8),
           _row('Status', inv.status, isDark),
           if (fmtDate != null) ...[
@@ -714,9 +742,36 @@ class _InvoiceDetailSheet extends StatelessWidget {
                 onPressed: () async {
                   try {
                     final url = await InvoiceApi.share(inv.id);
-                    if (context.mounted && url.isNotEmpty) {
-                      AppSnackbar.success(context, 'Share link: $url');
+                    if (!context.mounted) return;
+                    if (url.isEmpty) {
+                      AppSnackbar.error(context, 'Could not create a share link');
+                      return;
                     }
+                    await showDialog<void>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Invoice link'),
+                        content: SelectableText(url),
+                        actions: [
+                          TextButton(
+                            onPressed: () async {
+                              await Clipboard.setData(ClipboardData(text: url));
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                              if (context.mounted) {
+                                AppSnackbar.success(context, 'Invoice link copied');
+                              }
+                            },
+                            child: const Text('Copy'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
                   } catch (e) {
                     if (context.mounted) ErrorHandler.show(context, e);
                   }
@@ -863,6 +918,23 @@ class _InvoiceDetailSheet extends StatelessWidget {
   );
 }
 
+String _invoiceLabel(InvoiceModel inv) {
+  final number = inv.invoiceNumber?.trim();
+  if (number != null && number.isNotEmpty) return number;
+  final tail = inv.id.length > 8 ? inv.id.substring(inv.id.length - 8) : inv.id;
+  return 'INV-$tail';
+}
+
+String? _invoicePeriod(InvoiceModel inv) {
+  String fmt(DateTime date) {
+    final day = date.toUtc();
+    return '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
+  }
+
+  if (inv.billingStart == null || inv.billingEnd == null) return null;
+  return '${fmt(inv.billingStart!)} – ${fmt(inv.billingEnd!)}';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Generate invoice sheet
 // ─────────────────────────────────────────────────────────────────────────────
@@ -889,14 +961,17 @@ class _GenerateInvoiceSheetState extends State<_GenerateInvoiceSheet> {
 
   List<CustomerModel> _customers = [];
   CustomerModel? _customer;
-  DateTime _billingStart = DateTime.now();
-  DateTime _billingEnd = DateTime.now().add(const Duration(days: 30));
+  late DateTime _billingStart;
+  late DateTime _billingEnd;
   bool _loading = false;
   bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
+    final today = DateTime.now();
+    _billingStart = DateTime(today.year, today.month, 1);
+    _billingEnd = DateTime(today.year, today.month, today.day);
     _loadCustomers();
   }
 

@@ -452,9 +452,15 @@ export const generateDailyOrdersForDate = async (ownerId, date) => {
         dietType: row.orderDietType,
         deliverySlot: sub.deliverySlot,
         resolvedItems: row.resolvedItems,
-        amount: row.amount,
+        amount: isSkipped ? 0 : Number(row.amount) || 0,
+        listPrice: Number(row.amount) || 0,
         status: isSkipped ? "skipped" : "pending",
-        ...(isSkipped && { cancellationReason: "Leave Approved", cancelledAt: new Date() }),
+        ...(isSkipped && {
+          cancellationReason: subLeaves.some((leave) => leave.requestedBy === "Vendor")
+            ? "Vendor Holiday"
+            : "Leave Approved",
+          cancelledAt: new Date(),
+        }),
       });
       existingSet.add(dedupeKey);
     }
@@ -502,7 +508,7 @@ export const getTodayDailyOrders = async (ownerId, filters = {}) => {
     .populate({
       path: "customerId",
       match: { isDeleted: { $ne: true } },
-      select: "name phone address area",
+      select: "name phone address area zone zoneId",
     })
     .populate({
       path: "planId",

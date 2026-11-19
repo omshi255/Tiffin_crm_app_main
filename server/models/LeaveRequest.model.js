@@ -20,7 +20,6 @@ const leaveRequestSchema = new mongoose.Schema(
     subscriptionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Subscription",
-      required: true,
     },
     mealType: {
       type: String,
@@ -55,6 +54,17 @@ const leaveRequestSchema = new mongoose.Schema(
     },
     rejectedAt: {
       type: Date,
+    },
+    /** Rupees removed from the bill when this leave was approved. */
+    waivedAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    /** Customer timezone offset from UTC, in minutes, at the time of the request. */
+    timezoneOffsetMinutes: {
+      type: Number,
+      default: 330,
     },
   },
   {

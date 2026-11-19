@@ -83,9 +83,24 @@ const dailyOrderSchema = new mongoose.Schema(
     amount: {
       type: Number,
     },
+    /** Meal price before a leave waiver zeroed `amount`. */
+    listPrice: {
+      type: Number,
+      default: 0,
+    },
     isCharged: {
       type: Boolean,
       default: false,
+    },
+    /** Portion of `amount` taken from the subscription when the order was charged. */
+    subscriptionCharged: {
+      type: Number,
+      default: 0,
+    },
+    /** Portion of `amount` taken from the wallet when the order was charged. */
+    walletCharged: {
+      type: Number,
+      default: 0,
     },
     status: {
       type: String,

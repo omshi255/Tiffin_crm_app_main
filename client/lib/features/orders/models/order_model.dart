@@ -22,6 +22,9 @@ class OrderModel {
     this.totalAmount,
     this.slot,
     this.customerLocation,
+    this.cancellationReason,
+    this.zoneId,
+    this.zoneName,
   });
 
   final String id;
@@ -42,6 +45,9 @@ class OrderModel {
   final double? totalAmount;
   final String? slot;
   final OrderLocation? customerLocation;
+  final String? cancellationReason;
+  final String? zoneId;
+  final String? zoneName;
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     final id = json['_id']?.toString() ?? json['id']?.toString() ?? '';
@@ -110,6 +116,20 @@ class OrderModel {
               : null),
       slot: (json['deliverySlot'] ?? json['slot'])?.toString(),
       customerLocation: loc,
+      cancellationReason: json['cancellationReason']?.toString(),
+      zoneId: json['zoneId'] is Map
+          ? (json['zoneId'] as Map)['_id']?.toString()
+          : json['zoneId']?.toString() ??
+              (json['customerId'] is Map
+                  ? ((json['customerId'] as Map)['zoneId'] is Map
+                      ? ((json['customerId'] as Map)['zoneId'] as Map)['_id']
+                          ?.toString()
+                      : (json['customerId'] as Map)['zoneId']?.toString())
+                  : null),
+      zoneName: json['zoneName']?.toString() ??
+          (json['customerId'] is Map
+              ? (json['customerId'] as Map)['zone']?.toString()
+              : null),
     );
   }
 }

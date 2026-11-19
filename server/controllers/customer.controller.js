@@ -355,6 +355,18 @@ export const createCustomer = asyncHandler(async (req, res) => {
     throw new ApiError(409, "Customer with this phone already exists");
   }
 
+  if (value.zoneId) {
+    const zone = await Zone.findOne({
+      _id: value.zoneId,
+      ownerId,
+      isActive: true,
+    })
+      .select("_id name")
+      .lean();
+    if (!zone) throw new ApiError(400, "Delivery zone not found");
+    if (!value.zone) value.zone = zone.name;
+  }
+
   const payload = {
     ownerId,
     name: value.name.trim(),
@@ -429,8 +441,19 @@ export const updateCustomer = asyncHandler(async (req, res) => {
 
   const updatePayload = { ...value };
   if (Object.prototype.hasOwnProperty.call(updatePayload, "zoneId")) {
-    // Normalize empty string → null
-    if (!updatePayload.zoneId) updatePayload.zoneId = null;
+    if (!updatePayload.zoneId) {
+      updatePayload.zoneId = null;
+    } else {
+      const zone = await Zone.findOne({
+        _id: updatePayload.zoneId,
+        ownerId,
+        isActive: true,
+      })
+        .select("_id name")
+        .lean();
+      if (!zone) throw new ApiError(400, "Delivery zone not found");
+      if (!updatePayload.zone) updatePayload.zone = zone.name;
+    }
   }
   if (value.location) {
     applyCustomerLocationToPayload(

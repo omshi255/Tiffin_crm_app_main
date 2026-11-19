@@ -17,6 +17,7 @@ import '../../../../core/utils/whatsapp_helper.dart';
 import '../../../../core/socket/delivery_tracking_socket.dart';
 import '../../../dashboard/overview_dashboard_refresh_signal.dart';
 import '../../../../core/widgets/animated_list_item.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../core/widgets/lottie_empty_state.dart';
 import '../../../../models/customer_model.dart';
 import '../../../../services/pdf_download_service.dart';
@@ -196,10 +197,9 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
   String _query = '';
   String _filter = 'active';
   int _page = 1;
-  static const int _limit = 20;
+  int _total = 0;
+  static const int _limit = kListPageSize;
   bool _isLoading = false;
-  bool _hasMore = true;
-  bool _isLoadingMore = false;
   List<CustomerModel> _customers = [];
 
   _CustomerSort _sort = _CustomerSort.newest;
@@ -227,7 +227,6 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
     _loadCustomers();
     _loadCardPrefs();
     _loadBusinessProfile();
-    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -262,10 +261,54 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
     } catch (_) {}
   }
 
-  void _onScroll() {
-    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
-    final pos = _scrollController.position;
-    if (pos.pixels >= pos.maxScrollExtent - 200) _loadMore();
+  Future<void> _goToPage(int page) async {
+    if (page == _page || _isLoading) return;
+    setState(() => _page = page);
+    await _loadCustomers(reset: false);
+  }
+
+  Future<void> _loadCustomers({bool reset = true}) async {
+    if (_isLoading) return;
+    if (reset) _page = 1;
+    setState(() => _isLoading = true);
+    try {
+      final result = await CustomerApi.list(
+        page: _page,
+        limit: _limit,
+        status: _filter == 'all'
+            ? null
+            : (_filter == 'lowBalance' ? null : _filter),
+        lowBalance: _filter == 'lowBalance',
+        zone: _selectedZone,
+      );
+      List<dynamic> rawList = [];
+      int total = 0;
+      if (result['data'] is Map) {
+        final inner = result['data'] as Map<String, dynamic>;
+        rawList = inner['data'] as List? ?? [];
+        total = (inner['total'] as num?)?.toInt() ?? rawList.length;
+      } else if (result['data'] is List) {
+        rawList = result['data'] as List;
+        total = (result['total'] as num?)?.toInt() ?? rawList.length;
+      } else if (result['customers'] is List) {
+        rawList = result['customers'] as List;
+        total = (result['total'] as num?)?.toInt() ?? rawList.length;
+      }
+      final list = rawList
+          .map((e) => CustomerModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      setState(() {
+        _customers = list;
+        _total = total;
+      });
+      _updateCustomerZones(list);
+      await _loadAllLabels();
+    } catch (e, stack) {
+      if (kDebugMode) debugPrint('❌ _loadCustomers error: $e\n$stack');
+      if (mounted) ErrorHandler.show(context, e);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _updateCustomerZones(List<CustomerModel> customers) {
@@ -278,99 +321,6 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
         .toList();
     next.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     if (mounted) setState(() => _zones = next);
-  }
-
-  Future<void> _loadCustomers({bool reset = true}) async {
-    if (_isLoading) return;
-    if (reset) {
-      _page = 1;
-      _hasMore = true;
-    }
-    setState(() => _isLoading = true);
-    try {
-      final result = await CustomerApi.list(
-        page: 1,
-        limit: _limit,
-        status: _filter == 'all'
-            ? null
-            : (_filter == 'lowBalance' ? null : _filter),
-        lowBalance: _filter == 'lowBalance',
-        zone: _selectedZone,
-      );
-      List<dynamic> rawList = [];
-      int total = 0;
-      if (result['data'] is Map) {
-        final inner = result['data'] as Map<String, dynamic>;
-        rawList = inner['data'] as List? ?? [];
-        total = inner['total'] as int? ?? rawList.length;
-      } else if (result['data'] is List) {
-        rawList = result['data'] as List;
-        total = result['total'] as int? ?? rawList.length;
-      } else if (result['customers'] is List) {
-        rawList = result['customers'] as List;
-        total = result['total'] as int? ?? rawList.length;
-      }
-      final list = rawList
-          .map((e) => CustomerModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      setState(() {
-        _customers = list;
-        _hasMore = list.length >= _limit && list.length < total;
-        _page = 1;
-      });
-      _updateCustomerZones(list);
-      await _loadAllLabels();
-    } catch (e, stack) {
-      if (kDebugMode) debugPrint('❌ _loadCustomers error: $e\n$stack');
-      if (mounted) ErrorHandler.show(context, e);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_isLoadingMore || !_hasMore) return;
-    setState(() => _isLoadingMore = true);
-    try {
-      final nextPage = _page + 1;
-      final result = await CustomerApi.list(
-        page: nextPage,
-        limit: _limit,
-        status: _filter == 'all'
-            ? null
-            : (_filter == 'lowBalance' ? null : _filter),
-        lowBalance: _filter == 'lowBalance',
-        zone: _selectedZone,
-      );
-      List<dynamic> rawList = [];
-      int total = 0;
-      if (result['data'] is Map) {
-        final inner = result['data'] as Map<String, dynamic>;
-        rawList = inner['data'] as List? ?? [];
-        total = inner['total'] as int? ?? rawList.length;
-      } else if (result['data'] is List) {
-        rawList = result['data'] as List;
-        total = result['total'] as int? ?? rawList.length;
-      } else if (result['customers'] is List) {
-        rawList = result['customers'] as List;
-        total = result['total'] as int? ?? rawList.length;
-      }
-      final list = rawList
-          .map((e) => CustomerModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      setState(() {
-        _customers = [..._customers, ...list];
-        _page = nextPage;
-        _hasMore = _customers.length < total;
-      });
-      _updateCustomerZones(_customers);
-      await _loadAllLabels();
-    } catch (e, stack) {
-      if (kDebugMode) debugPrint('_loadMore error: $e\n$stack');
-      if (mounted) ErrorHandler.show(context, e);
-    } finally {
-      if (mounted) setState(() => _isLoadingMore = false);
-    }
   }
 
   Future<void> _refresh() async => _loadCustomers(reset: true);
@@ -2873,8 +2823,7 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
                                 bottom: MediaQuery.of(context).padding.bottom +
                                     24,
                               ),
-                              itemCount: filtered.length +
-                                  (_isLoadingMore ? 1 : 0),
+                              itemCount: filtered.length + (_total > _limit ? 1 : 0),
                               separatorBuilder: (context, index) =>
                                   Divider(
                                     height: 0.5,
@@ -2883,14 +2832,11 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
                                   ),
                               itemBuilder: (context, index) {
                                 if (index >= filtered.length) {
-                                  return const Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                        color: _P.g1,
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
+                                  return AppListPager(
+                                    page: _page,
+                                    total: _total,
+                                    pageSize: _limit,
+                                    onPage: _goToPage,
                                   );
                                 }
                                 final customer = filtered[index];

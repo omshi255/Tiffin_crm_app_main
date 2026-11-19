@@ -7,7 +7,9 @@ import '../models/auth_response_model.dart';
 import '../models/user_model.dart';
 
 abstract final class AuthApi {
-  static Future<void> sendOtp(String phone) async {
+  /// Sends an OTP, unless the server is in OTP bypass mode.
+  /// Returns a session when bypass login succeeded, otherwise null.
+  static Future<AuthResponseModel?> sendOtp(String phone, {String? role}) async {
     try {
       final dio = Dio(
         BaseOptions(
@@ -18,7 +20,10 @@ abstract final class AuthApi {
       );
       final response = await dio.post(
         ApiEndpoints.sendOtp,
-        data: {'phone': phone},
+        data: {
+          'phone': phone,
+          if (role != null) 'role': role,
+        },
         options: Options(
           headers: {
             'Content-Type': 'application/json',
@@ -27,6 +32,14 @@ abstract final class AuthApi {
         ),
       );
       throwIfNotSuccess(response);
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        final payload = data['data'];
+        if (payload is Map<String, dynamic> && payload['accessToken'] != null) {
+          return AuthResponseModel.fromJson(payload);
+        }
+      }
+      return null;
     } on DioException catch (e) {
       String? message;
       final data = e.response?.data;

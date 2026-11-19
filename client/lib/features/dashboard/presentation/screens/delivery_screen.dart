@@ -10,7 +10,10 @@ import '../../../../core/widgets/bottom_sheet_handle.dart';
 import '../../../delivery/data/delivery_api.dart';
 import '../../../delivery/models/delivery_staff_model.dart';
 import '../../../orders/data/order_api.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../orders/models/order_model.dart';
+import '../../../zones/data/zone_api.dart';
+import '../../../zones/models/zone_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Static brand / semantic colors (never change between themes)
@@ -173,6 +176,9 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   String? _statusFilter;
   DateTime? _filterDate;
   _MealTimeFilter _mealTimeFilter = _MealTimeFilter.all;
+  List<ZoneModel> _zones = [];
+  String? _zoneFilter;
+  int _ordersPage = 1;
   _OrderSort? _sort = _OrderSort.apiDefault;
   final Set<String> _selectedIds = {};
   bool _bulkMode = false;
@@ -197,6 +203,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadZones();
     _attachDailyOrdersSocket();
   }
 
@@ -224,6 +231,13 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     return _filterDate!.year != now.year ||
         _filterDate!.month != now.month ||
         _filterDate!.day != now.day;
+  }
+
+  Future<void> _loadZones() async {
+    try {
+      final zones = await ZoneApi.list(limit: 100, isActive: true);
+      if (mounted) setState(() => _zones = zones);
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -268,7 +282,18 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
 
   List<OrderModel> get _searchedOrders {
     final q = _query.trim().toLowerCase();
-    final base = _timeFilteredOrders;
+    final zone = _zoneFilter == null
+        ? null
+        : _zones.cast<ZoneModel?>().firstWhere(
+              (z) => z?.id == _zoneFilter,
+              orElse: () => null,
+            );
+    final base = _timeFilteredOrders.where((order) {
+      if (zone == null) return true;
+      if (order.zoneId == zone.id) return true;
+      final name = (order.zoneName ?? '').trim().toLowerCase();
+      return name.isNotEmpty && name == zone.name.trim().toLowerCase();
+    }).toList();
     if (q.isEmpty) return base;
     return base.where((o) {
       final name  = (o.customerName  ?? '').toLowerCase();
@@ -797,6 +822,53 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     );
   }
 
+  String _zoneLabel() {
+    if (_zoneFilter == null) return 'Zone (All)';
+    for (final zone in _zones) {
+      if (zone.id == _zoneFilter) return 'Zone (${zone.name})';
+    }
+    return 'Zone (All)';
+  }
+
+  Future<void> _openZoneSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => SafeArea(
+        child: _sheetContainer(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sheetHeader(ctx, 'Delivery zone'),
+              _sheetRadioItem(ctx, null, _zoneFilter, 'All zones', () {
+                Navigator.pop(ctx);
+                setState(() => _zoneFilter = null);
+              }),
+              if (_zones.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No delivery zones yet. Add one from Delivery Zones.',
+                    style: TextStyle(fontSize: 13, color: ctx.txtSecondary),
+                  ),
+                )
+              else
+                ..._zones.map((zone) => Column(
+                  children: [
+                    Container(height: 1, color: ctx.borderColor),
+                    _sheetRadioItem(ctx, zone.id, _zoneFilter, zone.name, () {
+                      Navigator.pop(ctx);
+                      setState(() => _zoneFilter = zone.id);
+                    }),
+                  ],
+                )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openMealSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -941,6 +1013,8 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                 _dropdownPill(label: _statusLabel(), onTap: _openStatusSheet),
                 const SizedBox(width: 8),
                 _dropdownPill(label: _mealLabel(),   onTap: _openMealSheet),
+                const SizedBox(width: 8),
+                _dropdownPill(label: _zoneLabel(),   onTap: _openZoneSheet),
               ],
             ),
           ),
@@ -956,7 +1030,9 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       return const Center(child: CircularProgressIndicator(color: _B.v600, strokeWidth: 2));
     }
 
-    return Builder(builder: (context) => RefreshIndicator(
+    return Builder(builder: (context) {
+      final window = PageWindow.slice(filtered, _ordersPage);
+      return RefreshIndicator(
       color: _B.v600,
       onRefresh: _load,
       child: filtered.isEmpty
@@ -999,15 +1075,25 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                 ),
               ],
             )
-          : ListView.builder(
+          : Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
               cacheExtent: 480,
               padding: EdgeInsets.fromLTRB(0, 6, 0, MediaQuery.of(context).padding.bottom + 16),
-              itemCount: filtered.length,
+              itemCount: window.items.length + (window.total > kListPageSize ? 1 : 0),
               itemBuilder: (context, index) {
-                final order    = filtered[index];
+                if (index >= window.items.length) {
+                  return AppListPager(
+                    page: window.page,
+                    total: window.total,
+                    onPage: (p) => setState(() => _ordersPage = p),
+                  );
+                }
+                final order    = window.items[index];
                 final st       = _ss(order.status, context._isDark);
                 final selected = _selectedIds.contains(order.id);
-                final isLast   = index == filtered.length - 1;
+                final isLast   = index == window.items.length - 1;
                 final name     = (order.customerName?.trim().isNotEmpty == true)
                     ? order.customerName!.trim() : order.customerId;
                 final slot = order.slot?.trim();
@@ -1125,7 +1211,11 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                 );
               },
             ),
-    ));
+                ),
+              ],
+            ),
+      );
+    });
   }
 
   // ── FAB ───────────────────────────────────────────────────────────────────
@@ -1281,6 +1371,11 @@ class _OrderDetailSheet extends StatelessWidget {
                           if (order.customerAddress != null) ...[
                             const SizedBox(height: 2),
                             Text(order.customerAddress!,
+                              style: TextStyle(fontSize: 11, color: context.txtSecondary)),
+                          ],
+                          if ((order.zoneName ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text('Zone: ${order.zoneName}',
                               style: TextStyle(fontSize: 11, color: context.txtSecondary)),
                           ],
                           if (order.slot != null) ...[

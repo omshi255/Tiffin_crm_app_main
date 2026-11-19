@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../customers/data/customer_api.dart';
 import '../../../payments/data/invoice_api.dart';
 import '../../../payments/data/payment_api.dart';
@@ -33,7 +34,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   bool _saving = false;
 
   // Payment history pagination (server: GET /payments?page&limit)
-  static const int _historyPageSize = 20;
+  static const int _historyPageSize = kListPageSize;
   int _paymentsPage = 1;
   int _paymentsTotal = 0;
   int _paymentsTotalPages = 1;
@@ -102,7 +103,10 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final payRes = await PaymentApi.list(limit: _historyPageSize);
+      final payRes = await PaymentApi.list(
+        page: 1,
+        limit: _historyPageSize,
+      );
       final now = DateTime.now();
       final startOfDay = DateTime(now.year, now.month, now.day);
       final endOfDay = startOfDay.add(const Duration(days: 1));
@@ -144,18 +148,17 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     }
   }
 
-  Future<void> _loadMorePayments() async {
-    if (_loadingMore || _paymentsPage >= _paymentsTotalPages) return;
+  Future<void> _goToPaymentsPage(int page) async {
+    if (_loadingMore || page == _paymentsPage) return;
     setState(() => _loadingMore = true);
     try {
-      final nextPage = _paymentsPage + 1;
       final res = await PaymentApi.list(
-        page: nextPage,
+        page: page,
         limit: _historyPageSize,
       );
       if (!mounted) return;
       setState(() {
-        _payments = [..._payments, ...res.items];
+        _payments = res.items;
         _paymentsPage = res.page;
         _paymentsTotal = res.total;
         _paymentsTotalPages = res.totalPages;
@@ -677,32 +680,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             methodIcon: _methodIcon,
           ),
         ),
-        if (_paymentsPage < _paymentsTotalPages) ...[
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: _loadingMore ? null : _loadMorePayments,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _violet700,
-              side: const BorderSide(color: _border),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            icon: _loadingMore
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.expand_more_rounded),
-            label: Text(
-              _loadingMore
-                  ? 'Loading…'
-                  : 'Load more (${_payments.length} / $_paymentsTotal)',
-            ),
-          ),
-        ],
+        AppListPager(
+          page: _paymentsPage,
+          total: _paymentsTotal,
+          pageSize: _historyPageSize,
+          onPage: _goToPaymentsPage,
+        ),
       ],
     );
   }

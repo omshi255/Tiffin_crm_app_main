@@ -28,12 +28,23 @@ abstract final class FinanceService {
   }
 
   static Future<FinanceSummary> fetchSummaryForMonth(DateTime month) async {
+    final monthData = await fetchMonth(month);
+    return monthData.summary;
+  }
+
+  static Future<
+      ({
+        FinanceSummary summary,
+        List<DailyFinanceRow> daily,
+        List<FinanceTransaction> transactions,
+      })> fetchMonth(DateTime month) async {
     try {
-      final m = month.month;
-      final y = month.year;
       final res = await DioClient.instance.get(
         _summaryPath,
-        queryParameters: <String, dynamic>{'month': m, 'year': y},
+        queryParameters: <String, dynamic>{
+          'month': month.month,
+          'year': month.year,
+        },
       );
       final data = _parse(res);
       if (data is! Map<String, dynamic>) {
@@ -42,20 +53,21 @@ abstract final class FinanceService {
 
       final summaryRaw = data['summary'];
       final dailyRaw = data['daily'];
+      final txnRaw = data['transactions'];
 
       final summary = summaryRaw is Map<String, dynamic>
           ? FinanceSummary.fromJson(summaryRaw)
           : FinanceSummary.empty;
 
-      final daily = <DailyEntry>[];
+      final dailyEntries = <DailyEntry>[];
       if (dailyRaw is List) {
         for (final e in dailyRaw) {
           if (e is! Map) continue;
-          daily.add(DailyEntry.fromJson(Map<String, dynamic>.from(e)));
+          dailyEntries.add(DailyEntry.fromJson(Map<String, dynamic>.from(e)));
         }
       }
 
-      return FinanceSummary(
+      final full = FinanceSummary(
         revenue: summary.revenue,
         expenses: summary.expenses,
         incomes: summary.incomes,
@@ -64,49 +76,64 @@ abstract final class FinanceService {
         refund: summary.refund,
         manual: summary.manual,
         profit: summary.profit,
-        daily: daily,
+        daily: dailyEntries,
+      );
+
+      final transactions = <FinanceTransaction>[];
+      if (txnRaw is List) {
+        for (final e in txnRaw) {
+          if (e is! Map) continue;
+          transactions.add(FinanceTransaction.fromJson(Map<String, dynamic>.from(e)));
+        }
+      }
+
+      return (
+        summary: full,
+        daily: _rowsFromDaily(full.daily, month),
+        transactions: transactions,
       );
     } on DioException catch (e) {
       throw ApiException(e.message ?? 'Network error', e.response?.statusCode);
     }
   }
 
-  static Future<List<DailyFinanceRow>> fetchCalendarForMonth(DateTime month) async {
-    try {
-      // Kept for backward compatibility (FinanceScreen uses fetchSummaryForMonth now).
-      final summary = await fetchSummaryForMonth(month);
-      final out = <DailyFinanceRow>[];
-      for (final e in summary.daily) {
-        final parts = e.date.split('/');
-        final day = parts.length == 2 ? int.tryParse(parts[0]) : null;
-        final mo = parts.length == 2 ? int.tryParse(parts[1]) : null;
-        final date = (day != null && mo != null)
-            ? DateTime(month.year, mo, day)
-            : DateTime(month.year, month.month, 1);
-        out.add(
-          DailyFinanceRow(
-            date: DateTime(date.year, date.month, date.day),
-            processedCount: e.processedCount,
-            processedAmount: e.processed,
-            incomes: e.income,
-            deposits: e.deposit,
-            refund: e.refund,
-            expenses: e.expense,
-            manual: e.manual,
-          ),
-        );
-      }
-      return out;
-    } on DioException catch (e) {
-      throw ApiException(e.message ?? 'Network error', e.response?.statusCode);
+  static List<DailyFinanceRow> _rowsFromDaily(List<DailyEntry> entries, DateTime month) {
+    final out = <DailyFinanceRow>[];
+    for (final e in entries) {
+      final parts = e.date.split('/');
+      final day = parts.length == 2 ? int.tryParse(parts[0]) : null;
+      final mo = parts.length == 2 ? int.tryParse(parts[1]) : null;
+      final date = (day != null && mo != null)
+          ? DateTime(month.year, mo, day)
+          : DateTime(month.year, month.month, 1);
+      out.add(
+        DailyFinanceRow(
+          date: DateTime(date.year, date.month, date.day),
+          processedCount: e.processedCount,
+          processedAmount: e.processed,
+          incomes: e.income,
+          deposits: e.deposit,
+          refund: e.refund,
+          expenses: e.expense,
+          manual: e.manual,
+        ),
+      );
     }
+    return out;
+  }
+
+  static Future<List<DailyFinanceRow>> fetchCalendarForMonth(DateTime month) async {
+    final monthData = await fetchMonth(month);
+    return monthData.daily;
   }
 
   static Future<List<FinanceTransaction>> fetchTransactionsForMonth(DateTime month) async {
     final start = DateTime(month.year, month.month, 1);
     final end = DateTime(month.year, month.month + 1, 0);
-    final dateFrom = start.toIso8601String().split('T').first;
-    final dateTo = end.toIso8601String().split('T').first;
+    String ymd(DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final dateFrom = ymd(start);
+    final dateTo = ymd(end);
 
     // NOTE:
     // We intentionally fetch using Dio directly here (rather than relying solely on
@@ -123,6 +150,8 @@ abstract final class FinanceService {
           date: i.date,
           amount: i.amount,
           title: i.source.isNotEmpty ? i.source : 'Income',
+          deletable: true,
+          deleteAs: 'income',
         ),
       for (final e in expenses)
         FinanceTransaction(
@@ -131,6 +160,8 @@ abstract final class FinanceService {
           date: e.date,
           amount: e.amount,
           title: e.title.isNotEmpty ? e.title : 'Expense',
+          deletable: true,
+          deleteAs: 'expense',
         ),
     ];
 

@@ -11,13 +11,17 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../class/apiResponseClass.js";
 import { ApiError } from "../class/apiErrorClass.js";
 import { sendNotification } from "../services/inAppNotification.service.js";
+import LeaveRequest from "../models/LeaveRequest.model.js";
+import { isOrderWaived } from "../services/leaveBilling.service.js";
 
 const listQuerySchema = Joi.object({
   customerId: Joi.string().hex().length(24).optional(),
   paymentStatus: Joi.string().valid("unpaid", "partial", "paid").optional(),
   month: Joi.string()
     .pattern(/^\d{4}-\d{2}$/)
-    .optional(), // YYYY-MM
+    .optional(),
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(100).optional(),
 });
 
 const generateSchema = Joi.object({
@@ -31,6 +35,20 @@ const generateSchema = Joi.object({
 const parseOrderDayUTC = (d) => {
   const [y, m, day] = d.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, day));
+};
+
+/** Calendar day as UTC midnight, whether Joi already parsed the date or it is still yyyy-MM-dd. */
+const utcDayStart = (input) => {
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    return parseOrderDayUTC(input);
+  }
+  const d = new Date(input);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+};
+
+const utcDayEnd = (input) => {
+  const start = utcDayStart(input);
+  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
 };
 
 const dailyReceiptQuerySchema = Joi.object({
@@ -50,6 +68,8 @@ export const listInvoices = asyncHandler(async (req, res) => {
     throw new ApiError(400, error.details.map((d) => d.message).join("; "));
   }
 
+  const page = value.page || 1;
+  const limit = Math.min(value.limit || 10, 100);
   const filter = { ownerId };
   if (value.customerId) filter.customerId = value.customerId;
   if (value.paymentStatus) filter.paymentStatus = value.paymentStatus;
@@ -61,12 +81,23 @@ export const listInvoices = asyncHandler(async (req, res) => {
     filter.billingEnd = { $lte: end };
   }
 
-  const invoices = await Invoice.find(filter)
-    .populate("customerId", "name phone area")
-    .sort({ createdAt: -1 })
-    .lean();
+  const [total, invoices] = await Promise.all([
+    Invoice.countDocuments(filter),
+    Invoice.find(filter)
+      .populate("customerId", "name phone area")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ]);
 
-  const response = new ApiResponse(200, "Invoices fetched", invoices);
+  const response = new ApiResponse(200, "Invoices fetched", {
+    data: invoices,
+    total,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+  });
   res.status(response.statusCode).json(response);
 });
 
@@ -81,8 +112,8 @@ export const generateInvoiceForRange = asyncHandler(async (req, res) => {
   }
 
   const customerId = new mongoose.Types.ObjectId(value.customerId);
-  const billingStart = new Date(value.billingStart);
-  const billingEnd = new Date(value.billingEnd);
+  const billingStart = utcDayStart(value.billingStart);
+  const billingEnd = utcDayEnd(value.billingEnd);
 
   const [owner, customer] = await Promise.all([
     User.findById(ownerId),
@@ -93,33 +124,26 @@ export const generateInvoiceForRange = asyncHandler(async (req, res) => {
 
   if (!customer) throw new ApiError(404, "Customer not found");
 
-  // fetch delivered orders first
   let orders = await DailyOrder.find({
     ownerId,
     customerId,
-    status: "delivered",
+    status: { $in: ["pending", "processing", "out_for_delivery", "delivered"] },
     orderDate: { $gte: billingStart, $lte: billingEnd },
   }).lean();
 
-  let usedFallback = false;
-  if (!orders.length) {
-    // try any order (pending/processing) so invoice can still be generated
-    orders = await DailyOrder.find({
-      ownerId,
-      customerId,
-      status: { $in: ["pending", "processing"] },
-      orderDate: { $gte: billingStart, $lte: billingEnd },
-    }).lean();
-    if (orders.length) {
-      usedFallback = true;
-      console.warn(
-        `Invoice fallback: using ${orders.length} non-delivered orders for customer ${customerId}`
-      );
-    }
-  }
-
   if (!orders.length) {
     throw new ApiError(400, "No orders in this range");
+  }
+
+  const approvedLeaves = await LeaveRequest.find({
+    customerId,
+    status: "Approved",
+    leaveDate: { $gte: billingStart, $lte: billingEnd },
+  }).lean();
+  orders = orders.filter((order) => !isOrderWaived(order, approvedLeaves));
+
+  if (!orders.length) {
+    throw new ApiError(400, "No billable meals in this range. Approved leave meals are excluded.");
   }
 
   // Build one line item per order using the actual order amount.
@@ -168,10 +192,7 @@ export const generateInvoiceForRange = asyncHandler(async (req, res) => {
     data: { invoiceId: invoice._id.toString() },
   }).catch(() => {});
 
-  const response = new ApiResponse(201, "Invoice generated", {
-    ...invoice.toObject(),
-    ...(usedFallback && { warning: "Generated using non-delivered orders" }),
-  });
+  const response = new ApiResponse(201, "Invoice generated", invoice.toObject());
   res.status(response.statusCode).json(response);
 });
 
@@ -521,10 +542,15 @@ export const shareInvoice = asyncHandler(async (req, res) => {
   invoice.shareTokenExpiresAt = expiresAt;
   await invoice.save();
 
-  const base = process.env.SHARE_LINK_BASE || process.env.PUBLIC_URL || "";
-  const url = `${base}/public/invoice/${token}`;
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.get("host");
+  const path = `/api/v1/public/invoice/${token}`;
+  const url = host ? `${proto}://${host}${path}` : path;
 
-  const response = new ApiResponse(200, "Share link created", { url });
+  const response = new ApiResponse(200, "Share link created", {
+    url,
+    shareUrl: url,
+  });
   res.status(response.statusCode).json(response);
 });
 

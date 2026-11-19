@@ -82,6 +82,9 @@ const passwordMessage =
 
 const sendOtpSchema = Joi.object({
   phone: phoneSchema,
+  role: Joi.string()
+    .valid("vendor", "customer", "delivery_staff", "admin")
+    .optional(),
 });
 
 const verifyOtpSchema = Joi.object({
@@ -109,9 +112,131 @@ const resetPasswordSchema = Joi.object({
   }),
 });
 
+const BYPASS_CREATE_ROLES = ["vendor", "customer", "delivery_staff"];
+
+/**
+ * Development-only phone login. Does not call Twilio or check an OTP.
+ * Existing users are reused. New users are created with the selected role,
+ * or the User model's default role (vendor) when none is selected.
+ * A phone that already belongs to a customer or delivery-staff record keeps
+ * that role so the existing dashboard links stay intact.
+ */
+function phoneDigits(phone) {
+  return String(phone || "").replace(/\D/g, "").slice(-10);
+}
+
+async function findUserByPhone(phone) {
+  const digits = phoneDigits(phone);
+  if (digits.length < 10) return null;
+  const exact = await User.findOne({ phone: digits });
+  if (exact) return exact;
+  const pattern = new RegExp(`${digits.split("").join("\\D*")}$`);
+  return User.findOne({ phone: pattern });
+}
+
+async function loginWithOtpBypass(req, res, phone, requestedRole) {
+  const resolved = await resolveRoleForPhone(phone);
+  const digits = phoneDigits(phone);
+  let user = await findUserByPhone(digits);
+
+  if (!user) {
+    let targetRole = BYPASS_CREATE_ROLES.includes(requestedRole)
+      ? requestedRole
+      : "vendor";
+    if (resolved.role === "customer" || resolved.role === "delivery_staff") {
+      targetRole = resolved.role;
+    }
+    try {
+      user = await User.create({ phone: digits, role: targetRole });
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+      user = await findUserByPhone(digits);
+      if (!user) throw err;
+    }
+  } else if (user.role !== "admin") {
+    // The role already stored for this phone is the previous dashboard.
+    // A login button must not replace a customer or delivery account.
+    let targetRole = user.role;
+    const savedPortalRole =
+      resolved.role === "customer" || resolved.role === "delivery_staff";
+    if (user.role === "customer" || user.role === "delivery_staff") {
+      targetRole = user.role;
+    } else if (user.role === "vendor" && savedPortalRole) {
+      const keepVendor = await hasVendorBusinessData(user._id);
+      if (!keepVendor) targetRole = resolved.role;
+    }
+    if (user.role !== targetRole) user.role = targetRole;
+  }
+
+  user.loginHistory = user.loginHistory || [];
+  user.loginHistory.push({
+    ip: req.ip,
+    userAgent: req.get("User-Agent") || "",
+    at: new Date(),
+  });
+  await user.save();
+  user = user.toObject();
+
+  const role = user.role;
+  const ownerId =
+    role === "admin"
+      ? null
+      : role === "vendor"
+        ? user._id.toString()
+        : resolved.ownerId || null;
+
+  let staffId = role === "delivery_staff" ? resolved.staffId || null : null;
+  if (role === "delivery_staff" && staffId) {
+    await DeliveryStaff.findByIdAndUpdate(staffId, {
+      $set: { userId: user._id },
+    });
+  }
+
+  const customerId = role === "customer" ? resolved.customerId || null : null;
+  const hasDashboard =
+    role === "vendor" ? await hasVendorBusinessData(user._id) : false;
+
+  let staffDisplayName = "";
+  if (role === "delivery_staff") {
+    staffDisplayName = await getDeliveryStaffDisplayName(user._id, staffId);
+  }
+
+  const payload = {
+    userId: user._id.toString(),
+    phone: user.phone,
+    role,
+    ...(ownerId && { ownerId }),
+    ...(staffId && { staffId }),
+    ...(customerId && { customerId }),
+  };
+
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
+
+  const response = new ApiResponse(200, "Login successful", {
+    accessToken,
+    refreshToken,
+    user: buildAuthUserPayload(user, role, {
+      ...(staffId && { staffId }),
+      ...(customerId && { customerId }),
+      ...(staffDisplayName && { staffDisplayName }),
+      hasDashboard,
+    }),
+    otpBypass: true,
+  });
+
+  res.status(response.statusCode).json({
+    success: response.success,
+    message: response.message,
+    data: response.data,
+  });
+}
+
 /**
  * POST /api/v1/auth/send-otp
  * Body: { phone: "9876543210" }
+ * When OTP_BYPASS_MODE is on (and NODE_ENV is not production), this logs the
+ * user in directly and does not call Twilio. Otherwise it sends an OTP.
  */
 export const sendOtpController = asyncHandler(async (req, res, next) => {
   const { error, value } = sendOtpSchema.validate(req.body, {
@@ -123,7 +248,13 @@ export const sendOtpController = asyncHandler(async (req, res, next) => {
     throw new ApiError(400, error.details.map((d) => d.message).join("; "));
   }
 
-  const { phone } = value;
+  const { phone, role } = value;
+
+  if (config.OTP_BYPASS_MODE) {
+    await loginWithOtpBypass(req, res, phone, role);
+    return;
+  }
+
   const result = await sendOtp(phone);
 
   if (!result.success) {
@@ -556,11 +687,15 @@ export const getMeController = asyncHandler(async (req, res, next) => {
     if (staffName) name = staffName;
   }
 
+  const hasDashboard =
+    user.role === "vendor" ? await hasVendorBusinessData(user._id) : false;
+
   const response = new ApiResponse(200, "User profile", {
     id: user._id.toString(),
     phone: user.phone,
     name,
     role: user.role,
+    hasDashboard,
     email: user.email,
     businessName: user.businessName || "",
     ownerName: user.ownerName || "",

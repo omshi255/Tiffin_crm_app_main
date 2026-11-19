@@ -66,6 +66,7 @@ class CustomerModel {
     this.location,
     this.zoneName,
     this.zone,
+    this.zoneId,
     this.vendorId,
     this.ownerId,
     this.vendor,
@@ -109,6 +110,9 @@ class CustomerModel {
 
   /// Free-text zone / area label saved from add-customer form.
   final String? zone;
+
+  /// Saved delivery zone document id.
+  final String? zoneId;
   final String? vendorId;
 
   /// Vendor (User) id — used for public portal announcement API.
@@ -224,8 +228,12 @@ class CustomerModel {
           ? (json['creditLimit'] as num).toDouble()
           : null,
       location: location,
-      zoneName: json['zoneName']?.toString(),
+      zoneName: json['zoneName']?.toString() ??
+          (json['zoneId'] is Map ? (json['zoneId'] as Map)['name']?.toString() : null),
       zone: json['zone']?.toString(),
+      zoneId: json['zoneId'] is Map
+          ? (json['zoneId'] as Map)['_id']?.toString()
+          : json['zoneId']?.toString(),
       vendorId: json['vendorId']?.toString(),
       ownerId: json['ownerId']?.toString(),
       vendor: json['vendor'] is Map<String, dynamic>

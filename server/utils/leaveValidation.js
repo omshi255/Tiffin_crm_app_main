@@ -1,84 +1,111 @@
 import config from "../config/index.js";
 
-/**
- * Checks if the cutoff time for a given leave request has been exceeded.
- *
- * @param {Date|string} leaveDate - The date of the leave
- * @param {string} mealType - The meal type (breakfast, lunch, dinner, both, all)
- * @param {string} timezone - Timezone to evaluate date & time in (defaults to Asia/Kolkata)
- * @returns {boolean} True if the cutoff is exceeded, false otherwise
- */
-export const isCutoffExceeded = (leaveDate, mealType, timezone = "Asia/Kolkata") => {
-  const now = new Date();
+const DEFAULT_OFFSET_MINUTES = 330;
 
-  // Convert now and leaveDate to local calendar date strings in the target timezone
-  const getLocalDateString = (d) => {
-    return d.toLocaleDateString("en-US", { timeZone: timezone });
+function cutoffMinutes() {
+  const parse = (timeStr) => {
+    const [h, m] = String(timeStr || "00:00").split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
   };
-
-  const leaveLocalDateStr = getLocalDateString(new Date(leaveDate));
-  const nowLocalDateStr = getLocalDateString(now);
-
-  const leaveDateObj = new Date(leaveLocalDateStr);
-  const nowDateObj = new Date(nowLocalDateStr);
-
-  // If the leave date is in the past, preparation has already happened
-  if (leaveDateObj < nowDateObj) {
-    return true;
-  }
-
-  // If the leave date is in the future, preparation hasn't started
-  if (leaveDateObj > nowDateObj) {
-    return false;
-  }
-
-  // If the leave date is today, check the meal cutoffs
-  const localTimeStr = now.toLocaleTimeString("en-US", {
-    timeZone: timezone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const [currentHour, currentMinute] = localTimeStr.split(":").map(Number);
-  const currentMinutesSinceMidnight = currentHour * 60 + currentMinute;
-
-  const parseConfigTimeToMinutes = (timeStr) => {
-    const [h, m] = timeStr.split(":").map(Number);
-    return h * 60 + m;
+  return {
+    breakfast: parse(config.LEAVE_CUTOFFS.breakfast),
+    lunch: parse(config.LEAVE_CUTOFFS.lunch),
+    dinner: parse(config.LEAVE_CUTOFFS.dinner),
   };
+}
 
-  const cutoffs = {
-    breakfast: parseConfigTimeToMinutes(config.LEAVE_CUTOFFS.breakfast),
-    lunch: parseConfigTimeToMinutes(config.LEAVE_CUTOFFS.lunch),
-    dinner: parseConfigTimeToMinutes(config.LEAVE_CUTOFFS.dinner),
+function localParts(date, offsetMinutes) {
+  const shifted = new Date(date.getTime() + offsetMinutes * 60 * 1000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
   };
+}
 
-  const checkMealCutoff = (meal) => {
-    if (meal === "breakfast" && currentMinutesSinceMidnight >= cutoffs.breakfast) return true;
-    if (meal === "lunch" && currentMinutesSinceMidnight >= cutoffs.lunch) return true;
-    if (meal === "dinner" && currentMinutesSinceMidnight >= cutoffs.dinner) return true;
-    return false;
-  };
-
-  // Map the request's mealType to the individual meals to check
-  let mealsToCheck = [];
-  if (mealType === "breakfast") {
-    mealsToCheck = ["breakfast"];
-  } else if (mealType === "lunch") {
-    mealsToCheck = ["lunch"];
-  } else if (mealType === "dinner") {
-    mealsToCheck = ["dinner"];
-  } else if (mealType === "both" || mealType === "all") {
-    mealsToCheck = ["breakfast", "lunch", "dinner"];
-  }
-
-  // If any of the requested meals has exceeded its cutoff, the cutoff is exceeded
-  for (const meal of mealsToCheck) {
-    if (checkMealCutoff(meal)) {
-      return true;
+/** Calendar day the customer picked. Date-only strings stay on that day. */
+export function calendarFromLeaveInput(value) {
+  if (typeof value === "string") {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
     }
   }
+  const date = value instanceof Date ? value : new Date(value);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
 
-  return false;
+function calendarKey(parts) {
+  return parts.year * 10000 + parts.month * 100 + parts.day;
+}
+
+function mealsToCheck(mealType) {
+  if (mealType === "both" || mealType === "all") return ["breakfast", "lunch", "dinner"];
+  if (mealType === "breakfast" || mealType === "lunch" || mealType === "dinner") {
+    return [mealType];
+  }
+  return [];
+}
+
+export function formatCutoff(meal) {
+  const raw = config.LEAVE_CUTOFFS[meal] || "00:00";
+  const [h, m] = raw.split(":").map(Number);
+  const suffix = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  const minute = String(m || 0).padStart(2, "0");
+  return `${hour}:${minute} ${suffix}`;
+}
+
+/**
+ * True when the customer can no longer request this meal.
+ * A request at the exact cutoff is still accepted; only times after it are closed.
+ * `offsetMinutes` is the customer's timezone offset from UTC (IST = 330).
+ */
+export const isCutoffExceeded = (
+  leaveDate,
+  mealType,
+  offsetMinutes = DEFAULT_OFFSET_MINUTES
+) => {
+  const offset = Number.isFinite(Number(offsetMinutes))
+    ? Number(offsetMinutes)
+    : DEFAULT_OFFSET_MINUTES;
+  const now = localParts(new Date(), offset);
+  const leave = calendarFromLeaveInput(leaveDate);
+  const leaveKey = calendarKey(leave);
+  const nowKey = calendarKey(now);
+
+  if (leaveKey < nowKey) return true;
+  if (leaveKey > nowKey) return false;
+
+  const cutoffs = cutoffMinutes();
+  return mealsToCheck(mealType).some((meal) => {
+    const limit = cutoffs[meal];
+    if (limit == null) return false;
+    return now.minutes > limit;
+  });
 };
+
+export function cutoffRejectionMessage(leaveDate, mealType, offsetMinutes) {
+  const offset = Number.isFinite(Number(offsetMinutes))
+    ? Number(offsetMinutes)
+    : DEFAULT_OFFSET_MINUTES;
+  const now = localParts(new Date(), offset);
+  const leave = calendarFromLeaveInput(leaveDate);
+  if (calendarKey(leave) < calendarKey(now)) {
+    return "Cannot request leave for a past date";
+  }
+  if (calendarKey(leave) > calendarKey(now)) return null;
+  const cutoffs = cutoffMinutes();
+  for (const meal of mealsToCheck(mealType)) {
+    if (now.minutes > cutoffs[meal]) {
+      const label = meal.charAt(0).toUpperCase() + meal.slice(1);
+      return `${label} leave cannot be requested after ${formatCutoff(meal)}.`;
+    }
+  }
+  return null;
+}

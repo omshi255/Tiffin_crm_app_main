@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/widgets/language_picker.dart';
 import '../../../../core/widgets/notification_bell_icon.dart';
+import '../../../../l10n/app_lang.dart';
 import '../../../dashboard/presentation/screens/invoices_screen.dart';
 
 class _D {
@@ -51,8 +53,8 @@ class SettingsScreen extends StatelessWidget {
           ),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: const Text(
-          'Settings',
+        title: Text(
+          tr('settings'),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -71,34 +73,34 @@ class SettingsScreen extends StatelessWidget {
         ),
         children: [
           // ── Account ───────────────────────────────────────────────────────
-          _SectionLabel(label: 'Account'),
+          _SectionLabel(label: tr('account')),
           _SettingsTile(
             icon: Icons.person_outline_rounded,
-            title: 'Business Profile',
-            subtitle: 'Name, address, phone, UPI for customers',
+            title: tr('businessProfile'),
+            subtitle: tr('businessProfileSub'),
             onTap: () => context.push(AppRoutes.profile),
           ),
 
           const SizedBox(height: 20),
 
           // ── Business ──────────────────────────────────────────────────────
-          _SectionLabel(label: 'Business'),
+          _SectionLabel(label: tr('business')),
           _SettingsTile(
             icon: Icons.receipt_outlined,
-            title: 'GST & extended business',
-            subtitle: 'GST number and extra fields',
+            title: tr('gst'),
+            subtitle: tr('gstSub'),
             onTap: () => context.push(AppRoutes.businessProfile),
           ),
           _SettingsTile(
             icon: Icons.map_outlined,
-            title: 'Delivery Zones',
-            subtitle: 'Manage your delivery areas',
+            title: tr('deliveryZones'),
+            subtitle: tr('zonesSub'),
             onTap: () => context.push(AppRoutes.zones),
           ),
           _SettingsTile(
             icon: Icons.receipt_long_outlined,
-            title: 'Invoice Settings',
-            subtitle: 'Templates, tax, footer text',
+            title: tr('invoiceSettings'),
+            subtitle: tr('invoiceSettingsSub'),
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const InvoicesScreen())),
@@ -107,11 +109,13 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ── General ───────────────────────────────────────────────────────
-          _SectionLabel(label: 'General'),
+          _SectionLabel(label: tr('general')),
+          const LanguagePickerTile(),
+          const SizedBox(height: 10),
           _SettingsTile(
             icon: Icons.notifications_outlined,
-            title: 'Notifications',
-            subtitle: 'Alerts, reminders, push settings',
+            title: tr('notifications'),
+            subtitle: tr('notificationsSub'),
             customLeading: const NotificationBellIcon(
               onPressed: null,
               size: 20,
@@ -145,7 +149,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(width: 14),
                   Text(
-                    'Logout',
+                    tr('logout'),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

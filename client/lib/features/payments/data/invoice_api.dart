@@ -3,10 +3,24 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/network/dio_client.dart';
 import '../models/invoice_model.dart';
 
+class InvoiceListResult {
+  const InvoiceListResult({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.totalPages,
+  });
+
+  final List<InvoiceModel> items;
+  final int total;
+  final int page;
+  final int totalPages;
+}
+
 abstract final class InvoiceApi {
-  static Future<List<InvoiceModel>> list({
+  static Future<InvoiceListResult> list({
     int page = 1,
-    int limit = 20,
+    int limit = 10,
     String? customerId,
     String? paymentStatus,
     String? month,
@@ -23,17 +37,31 @@ abstract final class InvoiceApi {
 
     final data = parseData(response); // returns { data: [...], total: N }
     List<dynamic> rawList = [];
+    var total = 0;
+    var currentPage = page;
+    var totalPages = 1;
     if (data is Map<String, dynamic>) {
       rawList = (data['data'] as List?) ??
                 (data['invoices'] as List?) ?? [];
+      total = (data['total'] as num?)?.toInt() ?? rawList.length;
+      currentPage = (data['page'] as num?)?.toInt() ?? page;
+      totalPages = (data['totalPages'] as num?)?.toInt() ??
+          (total == 0 ? 1 : ((total + limit - 1) ~/ limit));
     } else if (data is List) {
       rawList = data;
+      total = rawList.length;
     }
 
-    return rawList
+    final items = rawList
         .whereType<Map<String, dynamic>>()
         .map((e) => InvoiceModel.fromJson(e))
         .toList();
+    return InvoiceListResult(
+      items: items,
+      total: total,
+      page: currentPage,
+      totalPages: totalPages,
+    );
   }
 
   static Future<List<InvoiceModel>> getOverdue() async {
@@ -75,8 +103,8 @@ abstract final class InvoiceApi {
       ApiEndpoints.invoicesGenerate,
       data: {
         'customerId': customerId,
-        'billingStart': billingStart.toIso8601String().split('T').first,
-        'billingEnd': billingEnd.toIso8601String().split('T').first,
+        'billingStart': _calendarDay(billingStart),
+        'billingEnd': _calendarDay(billingEnd),
         'subscriptionId': ?subscriptionId,
       },
     );
@@ -103,8 +131,11 @@ abstract final class InvoiceApi {
       ApiEndpoints.invoiceShare(id),
     );
     final data = parseData(response);
-    if (data is Map<String, dynamic> && data['shareUrl'] != null) {
-      return data['shareUrl'] as String;
+    if (data is Map<String, dynamic>) {
+      final url = data['shareUrl'] ?? data['url'];
+      if (url != null && url.toString().trim().isNotEmpty) {
+        return url.toString();
+      }
     }
     return '';
   }
@@ -133,4 +164,13 @@ abstract final class InvoiceApi {
       rethrow;
     }
   }
+}
+
+/// Local calendar day, so an IST date picker does not shift back to the previous UTC day.
+String _calendarDay(DateTime date) {
+  final local = date.toLocal();
+  final y = local.year.toString().padLeft(4, '0');
+  final m = local.month.toString().padLeft(2, '0');
+  final d = local.day.toString().padLeft(2, '0');
+  return '$y-$m-$d';
 }

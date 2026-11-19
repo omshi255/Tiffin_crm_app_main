@@ -679,21 +679,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../auth/auth_session.dart';
 import '../router/app_routes.dart';
 import '../utils/app_snackbar.dart';
 import 'notification_bell_icon.dart';
 import 'drawer_storefront_icon.dart';
+import 'language_picker.dart';
+import '../locale/locale_provider.dart';
 import '../theme/theme_mode_provider.dart';
+import '../../l10n/app_lang.dart';
 import '../../features/auth/data/auth_api.dart';
 import '../../features/profile/data/profile_api.dart';
 import '../../features/support/screens/support_screen.dart';
 import '../../features/support/screens/learn_more_screen.dart';
 import '../../features/portal/presentation/screens/portal_announcement_screen.dart';
-import '../../features/expenses/screens/expenses_screen.dart';
-import '../../features/income/screens/income_screen.dart';
-import '../../features/dashboard/presentation/screens/monthly_finance_screen.dart';
-import '../../screens/finance/finance_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Theme-aware color helpers (extension on BuildContext)
@@ -793,8 +794,29 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
     context.push(route);
   }
 
+  static const _playStoreUrl =
+      'https://play.google.com/store/apps/details?id=com.tiffin.service.management.crm';
+
+  Future<void> _shareApp() async {
+    _close();
+    await Share.share(
+      'Manage tiffin customers, meal plans, and deliveries with TiffinCRM. $_playStoreUrl',
+      subject: 'TiffinCRM',
+    );
+  }
+
+  Future<void> _rateApp() async {
+    _close();
+    final uri = Uri.parse(_playStoreUrl);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      AppSnackbar.error(context, tr('couldNotOpenStore'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.watch(localeProvider);
     final displayName = _businessName.isNotEmpty
         ? _businessName
         : (_ownerName.isNotEmpty ? _ownerName : widget.fallbackUserName);
@@ -815,10 +837,10 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                 ),
                 children: [
                   // ── Main ──────────────────────────────────────────────────
-                  _label(context, 'Main'),
+                  _label(context, tr('main')),
                   _Item(
                     icon: Icons.person_outline_rounded,
-                    label: 'Profile Info',
+                    label: tr('profileInfo'),
                     onTap: () {
                       _close();
                       context
@@ -828,7 +850,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   ),
                   _Item(
                     icon: Icons.notifications_outlined,
-                    label: 'Notifications',
+                    label: tr('notifications'),
                     customLeading: const NotificationBellIcon(
                       onPressed: null,
                       size: 20,
@@ -837,7 +859,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   ),
                   _Item(
                     icon: Icons.login_rounded,
-                    label: 'My Meals',
+                    label: tr('myMeals'),
                     onTap: () {
                       _close();
                       context.push(
@@ -850,96 +872,44 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   _Divider(color: context.dividerColor),
 
                   // ── Operations ────────────────────────────────────────────
-                  _label(context, 'Operations'),
+                  _label(context, tr('operations')),
                   _Item(
                     icon: Icons.receipt_long_outlined,
-                    label: 'Daily Orders',
+                    label: tr('dailyOrders'),
                     onTap: () => _go(AppRoutes.delivery),
                   ),
                   _Item(
                     icon: Icons.groups_outlined,
-                    label: 'Delivery Staff',
+                    label: tr('deliveryStaff'),
                     onTap: () => _go(AppRoutes.deliveryStaff),
                   ),
                   _Item(
                     icon: Icons.map_outlined,
-                    label: 'Delivery Zones',
+                    label: tr('deliveryZones'),
                     onTap: () => _go(AppRoutes.zones),
                   ),
                   _Item(
                     icon: Icons.restaurant_menu_rounded,
-                    label: 'Menu Items',
+                    label: tr('menuItems'),
                     onTap: () => _go(AppRoutes.items),
                   ),
                   _Item(
                     icon: Icons.edit_note_rounded,
-                    label: 'Standard Meal Plans',
+                    label: tr('mealPlans'),
                     onTap: () => _go(AppRoutes.mealPlans),
                   ),
                   _Item(
                     icon: Icons.event_busy_rounded,
-                    label: 'Leave Requests',
+                    label: tr('leaveRequests'),
                     onTap: () => _go(AppRoutes.vendorLeaveInbox),
                   ),
 
                   _Divider(color: context.dividerColor),
 
-                  _label(context, 'Finance'),
-                  _Item(
-                    icon: Icons.bar_chart_rounded,
-                    label: 'Overview',
-                    onTap: () {
-                      _close();
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const FinanceScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _Item(
-                    icon: Icons.add_circle_outline_rounded,
-                    label: 'Add Income',
-                    onTap: () {
-                      _close();
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const IncomeScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _Item(
-                    icon: Icons.remove_circle_outline_rounded,
-                    label: 'Add Expense',
-                    onTap: () {
-                      _close();
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const ExpensesScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _Item(
-                    icon: Icons.calendar_month_outlined,
-                    label: 'Monthly View',
-                    onTap: () {
-                      _close();
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const MonthlyFinanceScreen(),
-                        ),
-                      );
-                    },
-                  ),
-
-                  _Divider(color: context.dividerColor),
-
-                  _label(context, 'Announcement Portal'),
+                  _label(context, tr('announcement')),
                   _Item(
                     icon: Icons.campaign_rounded,
-                    label: 'Portal Announcement',
+                    label: tr('customerAnnouncement'),
                     onTap: () {
                       _close();
                       Navigator.of(context).push(
@@ -953,21 +923,25 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   _Divider(color: context.dividerColor),
 
                   // ── Settings & Support ────────────────────────────────────
-                  _label(context, 'Settings & Support'),
+                  _label(context, tr('settingsSupport')),
                   _Item(
                     icon: Icons.settings_outlined,
-                    label: 'Settings',
+                    label: tr('settings'),
                     onTap: () => _go(AppRoutes.settings),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: LanguagePickerTile(),
                   ),
                   _ThemeModeTile(
                     icon: Icons.dark_mode_outlined,
-                    label: 'Dark Mode',
+                    label: tr('darkMode'),
                     value: ref.watch(themeModeProvider) == ThemeMode.dark,
                     onChanged: () => ref.read(themeModeProvider.notifier).toggle(),
                   ),
                   _Item(
                     icon: Icons.info_outline_rounded,
-                    label: 'Learn More',
+                    label: tr('learnMore'),
                     onTap: () {
                       _close();
                       Navigator.of(context).push(
@@ -979,23 +953,17 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   ),
                   _Item(
                     icon: Icons.share_outlined,
-                    label: 'Share TiffinCRM App',
-                    onTap: () {
-                      _close();
-                      AppSnackbar.success(context, 'Share TiffinCRM App');
-                    },
+                    label: tr('shareApp'),
+                    onTap: _shareApp,
                   ),
                   _Item(
                     icon: Icons.star_outline_rounded,
-                    label: 'Rate This App!',
-                    onTap: () {
-                      _close();
-                      AppSnackbar.success(context, 'Rate This App!');
-                    },
+                    label: tr('rateApp'),
+                    onTap: _rateApp,
                   ),
                   _Item(
                     icon: Icons.headset_mic_outlined,
-                    label: 'Support',
+                    label: tr('support'),
                     onTap: () {
                       _close();
                       Navigator.of(context).push(
@@ -1339,7 +1307,7 @@ class _LogoutTile extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Text(
-              'Logout',
+              tr('logout'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,

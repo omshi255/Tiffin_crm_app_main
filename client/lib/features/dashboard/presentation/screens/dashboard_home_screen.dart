@@ -1390,6 +1390,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
   final ScrollController _todayOrdersStripController = ScrollController();
   bool _loadingLeaves = true;
   List<LeaveRequestModel> _pendingLeaves = [];
+  String? _actingLeaveId;
 
   static String _greeting() {
     final hour = DateTime.now().hour;
@@ -1477,6 +1478,11 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
   }
 
   Future<void> _handleDashboardLeaveApprove(LeaveRequestModel leave) async {
+    if (_actingLeaveId != null) return;
+    setState(() {
+      _actingLeaveId = leave.id;
+      _pendingLeaves = _pendingLeaves.where((item) => item.id != leave.id).toList();
+    });
     try {
       await LeaveApi.updateLeaveStatus(leaveId: leave.id, status: 'approved');
       if (mounted) {
@@ -1484,15 +1490,14 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
           const SnackBar(content: Text('Leave request approved successfully')),
         );
       }
-      _loadPendingLeaves();
+      await _loadPendingLeaves();
       _loadStats();
       _loadDailyItems();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
-      }
+      if (mounted) ErrorHandler.show(context, e);
+      await _loadPendingLeaves();
+    } finally {
+      if (mounted) setState(() => _actingLeaveId = null);
     }
   }
 
@@ -1522,6 +1527,12 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
             FilledButton(
               onPressed: () async {
                 Navigator.pop(ctx);
+                if (_actingLeaveId != null) return;
+                setState(() {
+                  _actingLeaveId = leave.id;
+                  _pendingLeaves =
+                      _pendingLeaves.where((item) => item.id != leave.id).toList();
+                });
                 try {
                   await LeaveApi.updateLeaveStatus(
                     leaveId: leave.id,
@@ -1533,15 +1544,14 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                       const SnackBar(content: Text('Leave request rejected')),
                     );
                   }
-                  _loadPendingLeaves();
+                  await _loadPendingLeaves();
                   _loadStats();
                   _loadDailyItems();
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: ${e.toString()}')),
-                    );
-                  }
+                  if (mounted) ErrorHandler.show(context, e);
+                  await _loadPendingLeaves();
+                } finally {
+                  if (mounted) setState(() => _actingLeaveId = null);
                 }
               },
               style: FilledButton.styleFrom(backgroundColor: cs.error),
@@ -2722,8 +2732,9 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
                                   OutlinedButton(
-                                    onPressed: () =>
-                                        _handleDashboardLeaveReject(leave, cs),
+                                    onPressed: _actingLeaveId != null
+                                        ? null
+                                        : () => _handleDashboardLeaveReject(leave, cs),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: cs.error,
                                       side: BorderSide(color: cs.error),
@@ -2743,8 +2754,9 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                                   ),
                                   const SizedBox(width: 8),
                                   FilledButton(
-                                    onPressed: () =>
-                                        _handleDashboardLeaveApprove(leave),
+                                    onPressed: _actingLeaveId != null
+                                        ? null
+                                        : () => _handleDashboardLeaveApprove(leave),
                                     style: FilledButton.styleFrom(
                                       backgroundColor: Colors.green,
                                       padding: const EdgeInsets.symmetric(

@@ -235,6 +235,13 @@ const chargeOrderOnce = async (
     );
   }
 
+  const subscriptionCharged = Math.max(0, deducted - walletDeducted);
+  await DailyOrder.updateOne(
+    { _id: order._id },
+    { $set: { walletCharged: walletDeducted, subscriptionCharged } },
+    { session }
+  );
+
   order.isCharged = true;
   return {
     newSubscriptionBalance,

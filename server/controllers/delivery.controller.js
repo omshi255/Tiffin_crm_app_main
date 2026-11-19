@@ -52,7 +52,7 @@ export const getMyDeliveries = asyncHandler(async (req, res) => {
   const orders = await DailyOrder.find(filter)
     .populate(
       "customerId",
-      "name phone address area landmark location fcmToken"
+      "name phone address area zone zoneId landmark location fcmToken"
     )
     .populate("planId", "planName price")
     .populate("resolvedItems.itemId", "name unitPrice unit dietType")

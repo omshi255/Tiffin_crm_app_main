@@ -26,6 +26,7 @@ class SubscriptionModel {
     this.paymentDueDate,
     this.consumptionExposure,
     this.creditHeadroom,
+    this.mealTypes = const [],
   });
 
   final String id;
@@ -56,6 +57,8 @@ class SubscriptionModel {
   final double? consumptionExposure;
   /// Rupees left under the credit cap before new meals are blocked; null if unlimited.
   final double? creditHeadroom;
+  /// Plan meal slots, e.g. breakfast, lunch, dinner.
+  final List<String> mealTypes;
 
   /// Cash still owed on the plan contract when [payLater] is true.
   double get amountDueOnPlan {
@@ -89,12 +92,29 @@ class SubscriptionModel {
     String? planName;
     String? planType;
     double? planPrice;
+    final mealTypes = <String>[];
     final rawPlan = json['planId'];
     if (rawPlan is Map<String, dynamic>) {
       planId = rawPlan['_id']?.toString() ?? '';
       planName = rawPlan['planName']?.toString();
       planType = rawPlan['planType']?.toString();
       planPrice = (rawPlan['price'] as num?)?.toDouble();
+      final slots = rawPlan['mealSlots'];
+      if (slots is List) {
+        for (final slot in slots) {
+          if (slot is Map && slot['slot'] != null) {
+            final name = slot['slot'].toString().trim().toLowerCase();
+            if (name.isNotEmpty && !mealTypes.contains(name)) {
+              mealTypes.add(name);
+            }
+          }
+        }
+      }
+      if (mealTypes.isEmpty) {
+        if (rawPlan['includesBreakfast'] == true) mealTypes.add('breakfast');
+        if (rawPlan['includesLunch'] == true) mealTypes.add('lunch');
+        if (rawPlan['includesDinner'] == true) mealTypes.add('dinner');
+      }
     } else {
       planId = rawPlan?.toString() ?? '';
     }
@@ -159,6 +179,7 @@ class SubscriptionModel {
       paymentDueDate: pDue,
       consumptionExposure: (json['consumptionExposure'] as num?)?.toDouble(),
       creditHeadroom: (json['creditHeadroom'] as num?)?.toDouble(),
+      mealTypes: mealTypes,
     );
   }
 }

@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/color_utils.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../core/widgets/bottom_sheet_handle.dart';
 import '../../../customers/data/customer_api.dart';
 import '../../../plans/data/plan_api.dart';
@@ -217,6 +218,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen>
   // ── all logic fields unchanged ──
   List<SubscriptionModel> _list = [];
   bool _loading = true;
+  int _page = 1;
+  int _total = 0;
+  static const int _pageSize = kListPageSize;
   StreamSubscription<void>? _dailyOrdersSocketSub;
   static const List<String> _statusTabs = [
     'active',
@@ -243,7 +247,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen>
   }
 
   void _onTabChanged() {
-    if (!_tabController.indexIsChanging) _load();
+    if (_tabController.indexIsChanging) return;
+    _page = 1;
+    _load();
   }
 
   @override
@@ -265,19 +271,33 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final res = await SubscriptionApi.list(status: _currentStatus, limit: 50);
+      final res = await SubscriptionApi.list(
+        status: _currentStatus,
+        page: _page,
+        limit: _pageSize,
+      );
       final inner = res['data'];
       List<dynamic> rawList = [];
+      var total = 0;
       if (inner is List) {
         rawList = inner;
+        total = (res['total'] as num?)?.toInt() ?? rawList.length;
       } else if (inner is Map<String, dynamic>) {
         rawList = (inner['data'] as List?) ?? [];
+        total = (inner['total'] as num?)?.toInt() ??
+            (res['total'] as num?)?.toInt() ??
+            rawList.length;
       }
       final list = rawList
           .whereType<Map<String, dynamic>>()
           .map((e) => SubscriptionModel.fromJson(e))
           .toList();
-      if (mounted) setState(() => _list = list);
+      if (mounted) {
+        setState(() {
+          _list = list;
+          _total = total;
+        });
+      }
     } catch (e) {
       if (mounted) ErrorHandler.show(context, e);
     } finally {
@@ -593,8 +613,19 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen>
                                 16,
                                 MediaQuery.of(context).padding.bottom + 100,
                               ),
-                              itemCount: _list.length,
+                              itemCount: _list.length + (_total > _pageSize ? 1 : 0),
                               itemBuilder: (context, index) {
+                                if (index >= _list.length) {
+                                  return AppListPager(
+                                    page: _page,
+                                    total: _total,
+                                    pageSize: _pageSize,
+                                    onPage: (p) {
+                                      setState(() => _page = p);
+                                      _load();
+                                    },
+                                  );
+                                }
                                 final sub = _list[index];
                                 final totalDays = totalDaysInclusiveIST(
                                   sub.startDate,

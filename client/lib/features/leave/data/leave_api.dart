@@ -1,7 +1,13 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+
 import '../../../../core/network/dio_client.dart';
 import '../models/leave_request_model.dart';
 
 class LeaveApi {
+  static int get _offsetMinutes => DateTime.now().timeZoneOffset.inMinutes;
+
   // Vendor: Get leave requests
   static Future<Map<String, dynamic>> getLeavesForVendor({
     required String status,
@@ -45,14 +51,14 @@ class LeaveApi {
 
   // Customer: Get leaves
   static Future<Map<String, dynamic>> getLeavesForCustomer({
-    required String status,
-    required int page,
-    required int limit,
+    String? status,
+    int page = 1,
+    int limit = 100,
   }) async {
     final response = await DioClient.instance.get(
       '/leave/customer',
       queryParameters: {
-        'status': status,
+        if (status != null && status.isNotEmpty) 'status': status,
         'page': page,
         'limit': limit,
       },
@@ -65,6 +71,42 @@ class LeaveApi {
       'leaves': list,
       'total': data['pagination']?['total'] ?? list.length,
     };
+  }
+
+  static Future<Map<String, dynamic>> getMonthlySummary(String month) async {
+    final response = await DioClient.instance.get(
+      '/leave/summary',
+      queryParameters: {
+        'month': month,
+        'timezoneOffsetMinutes': _offsetMinutes,
+      },
+    );
+    return Map<String, dynamic>.from(parseData(response) as Map);
+  }
+
+  static Future<Map<String, dynamic>> getMonthlyBill(String month) async {
+    final response = await DioClient.instance.get(
+      '/customer/me/monthly-bill',
+      queryParameters: {
+        'month': month,
+        'timezoneOffsetMinutes': _offsetMinutes,
+      },
+    );
+    return Map<String, dynamic>.from(parseData(response) as Map);
+  }
+
+  static Future<Uint8List> downloadMonthlyBill(String month) async {
+    final response = await DioClient.instance.get(
+      '/customer/me/monthly-bill/pdf',
+      queryParameters: {
+        'month': month,
+        'timezoneOffsetMinutes': _offsetMinutes,
+      },
+      options: Options(responseType: ResponseType.bytes),
+    );
+    final data = response.data;
+    if (data is Uint8List) return data;
+    return Uint8List.fromList(List<int>.from(data as List));
   }
 
   // Customer: Request Leave
@@ -80,6 +122,7 @@ class LeaveApi {
         'leaveDate': leaveDate.toIso8601String().split('T')[0],
         'mealType': mealType,
         'reason': reason,
+        'timezoneOffsetMinutes': _offsetMinutes,
         if (notes != null) 'notes': notes,
       },
     );
@@ -87,7 +130,7 @@ class LeaveApi {
   }
 
   // Vendor: Declare Holiday/Leave
-  static Future<void> requestVendorLeave({
+  static Future<String> requestVendorLeave({
     required DateTime leaveDate,
     required String mealType,
     required String reason,
@@ -103,5 +146,10 @@ class LeaveApi {
       },
     );
     throwIfNotSuccess(response);
+    final body = response.data;
+    if (body is Map && body['message'] != null) {
+      return body['message'].toString();
+    }
+    return 'Vendor holiday declared successfully';
   }
 }

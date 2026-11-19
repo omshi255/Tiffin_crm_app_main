@@ -11,6 +11,10 @@ import {
   clearReadNotifications,
   markAllNotificationsRead,
 } from "../controllers/customerPortal.controller.js";
+import {
+  getMyMonthlyBill,
+  downloadMyMonthlyBill,
+} from "../controllers/customerBill.controller.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/rbac.middleware.js";
 
@@ -29,5 +33,7 @@ router.patch("/me/notifications/:id/read", markNotificationRead);
 router.delete("/me/notifications/:id", deleteNotification);
 router.delete("/me/notifications/clear-read", clearReadNotifications);
 router.patch("/me/notifications/read-all", markAllNotificationsRead);
+router.get("/me/monthly-bill", getMyMonthlyBill);
+router.get("/me/monthly-bill/pdf", downloadMyMonthlyBill);
 
 export default router;

@@ -13,6 +13,7 @@ class UserModel {
     this.upiId = '',
     this.fcmToken = '',
     this.isActive = true,
+    this.hasDashboard = false,
   });
 
   final String id;
@@ -28,10 +29,13 @@ class UserModel {
   final String upiId;
   final String fcmToken;
   final bool isActive;
+  /// Vendor already has customers, plans, or subscriptions saved.
+  final bool hasDashboard;
 
-  /// Vendor onboarding is complete when business + owner name exist (matches server onboarding).
+  /// Open the saved vendor dashboard when profile names exist or business data is already stored.
   bool get isVendorProfileComplete =>
-      businessName.trim().isNotEmpty && ownerName.trim().isNotEmpty;
+      hasDashboard ||
+      (businessName.trim().isNotEmpty && ownerName.trim().isNotEmpty);
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -48,6 +52,7 @@ class UserModel {
       upiId: json['upiId']?.toString() ?? '',
       fcmToken: json['fcmToken']?.toString() ?? '',
       isActive: json['isActive'] as bool? ?? true,
+      hasDashboard: json['hasDashboard'] == true,
     );
   }
 

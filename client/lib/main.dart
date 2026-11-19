@@ -9,6 +9,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'l10n/app_lang.dart';
 import 'core/network/dio_client.dart';
 import 'core/notifications/notification_badge_service.dart';
 import 'core/router/app_router.dart';
@@ -58,6 +59,7 @@ Future<void> main() async {
   }
   final prefs = await SharedPreferences.getInstance();
   AppRouter.onboardingSeen = prefs.getBool('onboarding_seen') ?? false;
+  await AppLang.load(prefs);
 
   try {
     if (kIsWeb) {

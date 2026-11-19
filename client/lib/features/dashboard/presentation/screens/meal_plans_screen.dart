@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../plans/data/plan_api.dart';
 import '../../../plans/models/plan_model.dart';
 
@@ -45,6 +46,8 @@ class _MealPlansScreenState extends State<MealPlansScreen> {
   // ── State ─────────────────────────────────────────────────────────────────
   List<PlanModel> _plans = [];
   bool _isLoading = true;
+  int _globalPage = 1;
+  int _customPage = 1;
 
   @override
   void initState() {
@@ -132,6 +135,8 @@ class _MealPlansScreenState extends State<MealPlansScreen> {
     final customPlans = _plans
         .where((p) => p.customerId != null && p.customerId!.isNotEmpty)
         .toList();
+    final globalWindow = PageWindow.slice(globalPlans, _globalPage);
+    final customWindow = PageWindow.slice(customPlans, _customPage);
 
     return Scaffold(
       backgroundColor: isDark ? _D.bg : _bg,
@@ -230,7 +235,7 @@ class _MealPlansScreenState extends State<MealPlansScreen> {
                   if (globalPlans.isEmpty)
                     _emptyCard('No global plans yet', isDark)
                   else
-                    ...globalPlans.map(
+                    ...globalWindow.items.map(
                       (plan) => _PlanCard(
                         plan: plan,
                         isCustom: false,
@@ -248,6 +253,11 @@ class _MealPlansScreenState extends State<MealPlansScreen> {
                         ),
                       ),
                     ),
+                  AppListPager(
+                    page: globalWindow.page,
+                    total: globalWindow.total,
+                    onPage: (p) => setState(() => _globalPage = p),
+                  ),
 
                   const SizedBox(height: 24),
 
@@ -262,7 +272,7 @@ class _MealPlansScreenState extends State<MealPlansScreen> {
                   if (customPlans.isEmpty)
                     _emptyCard('No custom plans yet', isDark)
                   else
-                    ...customPlans.map(
+                    ...customWindow.items.map(
                       (plan) => _PlanCard(
                         plan: plan,
                         isCustom: true,
@@ -280,6 +290,11 @@ class _MealPlansScreenState extends State<MealPlansScreen> {
                         ),
                       ),
                     ),
+                  AppListPager(
+                    page: customWindow.page,
+                    total: customWindow.total,
+                    onPage: (p) => setState(() => _customPage = p),
+                  ),
                 ],
               ),
             ),

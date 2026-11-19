@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../l10n/app_lang.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_drawer.dart';
 import '../../../../core/notifications/notification_badge_service.dart';
@@ -118,22 +119,22 @@ class _DashboardShellState extends State<DashboardShell>
     _NavItem(
       icon: PhosphorIconsRegular.house,
       iconSelected: PhosphorIconsFill.house,
-      label: 'Overview',
+      label: 'overview',
     ),
     _NavItem(
       icon: PhosphorIconsRegular.receipt,
       iconSelected: PhosphorIconsFill.receipt,
-      label: 'Orders',
+      label: 'orders',
     ),
     _NavItem(
       icon: PhosphorIconsRegular.users,
       iconSelected: PhosphorIconsFill.users,
-      label: 'Customers',
+      label: 'customers',
     ),
     _NavItem(
       icon: PhosphorIconsRegular.wallet,
       iconSelected: PhosphorIconsFill.wallet,
-      label: 'Finance',
+      label: 'finance',
     ),
   ];
 
@@ -262,7 +263,7 @@ class _DashboardShellState extends State<DashboardShell>
                           : e.value.icon,
                       size: 22,
                     ),
-                    label: e.value.label,
+                    label: tr(e.value.label),
                   ),
                 )
                 .toList(),

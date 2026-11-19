@@ -10,10 +10,12 @@ class NotificationBellIcon extends StatelessWidget {
     super.key,
     this.onPressed,
     this.size = 24,
+    this.iconColor,
   });
 
   final VoidCallback? onPressed;
   final double size;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +51,8 @@ class NotificationBellIcon extends StatelessWidget {
       child: PhosphorIcon(
         PhosphorIconsRegular.bell,
         size: size,
-        color: isDark ? const Color(0xFFF8FAFC) : AppColors.textPrimary,
+        color: iconColor ??
+            (isDark ? const Color(0xFFF8FAFC) : AppColors.textPrimary),
       ),
     );
 

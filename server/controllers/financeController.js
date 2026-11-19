@@ -5,7 +5,7 @@ import Customer from "../models/Customer.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../class/apiErrorClass.js";
 import { parseUTC } from "../services/dailyOrder.service.js";
-import { getFinanceSummary, getDailyBreakdown } from "../utils/financeCalc.js";
+import { getFinanceBundle } from "../utils/financeCalc.js";
 
 const FINANCE_TYPES = ["processed", "income", "deposit", "expense", "refund", "manual"];
 const STATUSES = ["completed", "voided"];
@@ -277,18 +277,13 @@ export const getDailyFinance = asyncHandler(async (req, res) => {
 
   const ownerId = req.user.userId;
   const start = parseUTC(value.date);
-  const endExclusive = new Date(start);
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-
-  // Backward compatibility: this endpoint isn't used by the new Finance screen.
+  const end = new Date(start);
+  end.setUTCHours(23, 59, 59, 999);
+  const bundle = await getFinanceBundle(ownerId, start, end);
   success(res, {
-    revenue: 0,
-    incomes: 0,
-    deposits: 0,
-    expenses: 0,
-    refunds: 0,
-    gross_income: 0,
-    net_profit: 0,
+    ...bundle.summary,
+    gross_income: bundle.summary.processed + bundle.summary.incomes,
+    net_profit: bundle.summary.profit,
     pending_cash: 0,
   });
 });
@@ -432,14 +427,12 @@ export const getMonthlySummary = asyncHandler(async (req, res) => {
     endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
   }
 
-  const [summary, daily] = await Promise.all([
-    getFinanceSummary(ownerId, startDate, endDate),
-    getDailyBreakdown(ownerId, startDate, endDate),
-  ]);
+  const bundle = await getFinanceBundle(ownerId, startDate, endDate);
 
   success(res, {
-    summary,
-    daily,
+    summary: bundle.summary,
+    daily: bundle.daily,
+    transactions: bundle.transactions,
     period: {
       month,
       year,

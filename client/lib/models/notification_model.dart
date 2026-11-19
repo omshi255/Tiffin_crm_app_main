@@ -6,6 +6,7 @@ class NotificationModel {
     required this.time,
     this.read = false,
     this.type,
+    this.data,
   });
 
   final String id;
@@ -14,6 +15,7 @@ class NotificationModel {
   final DateTime time;
   final bool read;
   final String? type;
+  final Map<String, dynamic>? data;
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
     final id = json['_id']?.toString() ?? '';
@@ -34,6 +36,9 @@ class NotificationModel {
       time: time,
       read: json['isRead'] == true,
       type: json['type']?.toString(),
+      data: json['data'] is Map
+          ? Map<String, dynamic>.from(json['data'] as Map)
+          : null,
     );
   }
 }

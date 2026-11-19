@@ -39,16 +39,16 @@ class DeliveryMapScreen extends StatefulWidget {
 }
 
 class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
-  static const _violet900 = Color(0xFF2D1B69);
-  static const _violet700 = Color(0xFF4C2DB8);
-  static const _violet600 = Color(0xFF5B35D5);
-  static const _violet100 = Color(0xFFEDE8FD);
-  static const _violet50 = Color(0xFFF5F2FF);
-  static const _bg = Color(0xFFF6F4FF);
+  static const _violet900 = Color(0xFF3B1578);
+  static const _violet700 = Color(0xFF7B3FE4);
+  static const _violet600 = Color(0xFF7B3FE4);
+  static const _violet100 = Color(0xFFEDE9FE);
+  static const _violet50 = Color(0xFFF5F3FF);
+  static const _bg = Color(0xFFF8FAFC);
   static const _surface = Color(0xFFFFFFFF);
-  static const _border = Color(0xFFE4DFF7);
-  static const _textPrimary = Color(0xFF1A0E45);
-  static const _textSecondary = Color(0xFF7B6DAB);
+  static const _border = Color(0xFFE2E8F0);
+  static const _textPrimary = Color(0xFF1F1535);
+  static const _textSecondary = Color(0xFF6B7280);
   static const _success = Color(0xFF0F7B0F);
 
   static const LatLng _indore = LatLng(22.7196, 75.8577);
@@ -610,7 +610,16 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        backgroundColor: _violet700,
+        flexibleSpace: const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF7B3FE4), Color(0xFF6B35C8), Color(0xFF3B1578)],
+            ),
+          ),
+        ),
+        backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: false,
@@ -696,7 +705,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                   Polyline(
                     points: _routePolyline,
                     strokeWidth: 4,
-                    color: Colors.blue.withValues(alpha: 0.85),
+                    color: _violet600.withValues(alpha: 0.9),
                   ),
                 ],
               ),

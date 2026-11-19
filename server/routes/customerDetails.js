@@ -714,6 +714,7 @@ router.post(
           type: "credit",
           paymentMode: storedMode,
           source: "subscription_dues_payment",
+          financeType: "deposit",
           items: [],
         });
       }
@@ -730,6 +731,7 @@ router.post(
           type: "credit",
           paymentMode: storedMode,
           source: "wallet_topup",
+          financeType: "deposit",
           items: [],
         });
       }
@@ -952,6 +954,7 @@ router.post(
               type: "debit",
               paymentMode: "cash",
               source: "extra_charge_separate",
+              financeType: "income",
               items: [
                 {
                   name: value.note,

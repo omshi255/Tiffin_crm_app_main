@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tiffin_crm/features/orders/models/order_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -11,58 +11,99 @@ import '../../../../core/auth/auth_session.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/socket/delivery_tracking_socket.dart';
 import '../../../../core/storage/secure_storage.dart';
+import '../../../../core/theme/theme_mode_provider.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
 import '../../../../core/utils/location_helper.dart';
 // ignore: unused_import
+import '../../../../core/widgets/app_list_pager.dart';
+import '../../../../core/widgets/language_picker.dart';
 import '../../../../core/widgets/notification_bell_icon.dart';
+import '../../../../l10n/app_lang.dart';
 import '../../../../models/customer_model.dart';
+import '../../../../models/notification_model.dart';
 import '../../data/customer_portal_api.dart';
-import '../../../dashboard/data/notification_api.dart';
 import '../../../auth/data/auth_api.dart';
 import '../../../orders/data/order_api.dart';
 import '../../../orders/models/order_status.dart';
+import '../../../leave/data/leave_api.dart';
+import '../../../leave/models/leave_request_model.dart';
 import '../../../leave/presentation/screens/customer_leave_requests_screen.dart';
+import '../../../leave/presentation/screens/customer_monthly_bills_screen.dart';
+import '../../../subscriptions/models/subscription_model.dart';
 
-// ── iMeals Green + Violet palette ────────────────────────────────────────────
-const _green900 = Color(0xFF064E3B);
-const _green700 = Color(0xFF065F46);
-const _green600 = Color(0xFF059669);
-const _green200 = Color(0xFFA7F3D0);
-const _green100 = Color(0xFFD1FAE5);
-const _green50 = Color(0xFFF0FDF4);
-const _violet700 = Color(0xFF4C2DB8);
-const _violet600 = Color(0xFF5B35D5);
-const _violet100 = Color(0xFFEDE8FD);
-const _violet50 = Color(0xFFF5F2FF);
-const _bg = Color(0xFFF9FFFE);
-const _surface = Color(0xFFFFFFFF);
-const _border = Color(0xFFD1FAE5);
-const _divider = Color(0xFFE8FDF5);
-const _text1 = Color(0xFF111827);
-const _text2 = Color(0xFF6B7280);
-const _warning = Color(0xFFBA7517);
-const _warnSoft = Color(0xFFFAEEDA);
-const _danger = Color(0xFFD93025);
-const _dangerSoft = Color(0xFFFCECEB);
+// Vendor violet palette. The customer shell sets CustomerChrome.brightness.
+abstract final class CustomerChrome {
+  static Brightness brightness = Brightness.light;
+  static bool get isDark => brightness == Brightness.dark;
+}
 
-class CustomerHomeScreen extends StatefulWidget {
+bool get _custDark => CustomerChrome.isDark;
+
+Color get _green900 =>
+    _custDark ? const Color(0xFFDDD6FE) : const Color(0xFF2D1B69);
+Color get _green700 =>
+    _custDark ? const Color(0xFF9B6AF0) : const Color(0xFF4C2DB8);
+Color get _green600 =>
+    _custDark ? const Color(0xFFB794F6) : const Color(0xFF5B35D5);
+Color get _green200 =>
+    _custDark ? const Color(0xFF3B2F6B) : const Color(0xFFD4C4F8);
+Color get _green100 =>
+    _custDark ? const Color(0xFF2A2348) : const Color(0xFFEDE8FD);
+Color get _green50 =>
+    _custDark ? const Color(0xFF1E1B3A) : const Color(0xFFF5F2FF);
+Color get _violet700 =>
+    _custDark ? const Color(0xFF9B6AF0) : const Color(0xFF4C2DB8);
+Color get _violet600 =>
+    _custDark ? const Color(0xFFB794F6) : const Color(0xFF5B35D5);
+Color get _violet100 =>
+    _custDark ? const Color(0xFF2A2348) : const Color(0xFFEDE8FD);
+Color get _violet50 =>
+    _custDark ? const Color(0xFF1E1B3A) : const Color(0xFFF5F2FF);
+Color get _bg => _custDark ? const Color(0xFF0E1020) : const Color(0xFFF6F4FF);
+Color get _surface =>
+    _custDark ? const Color(0xFF141625) : const Color(0xFFFFFFFF);
+Color get _border =>
+    _custDark ? const Color(0xFF2F2A55) : const Color(0xFFE4DFF7);
+Color get _divider =>
+    _custDark ? const Color(0xFF1E1B3A) : const Color(0xFFEEEBFA);
+Color get _text1 =>
+    _custDark ? const Color(0xFFF8FAFC) : const Color(0xFF1A0E45);
+Color get _text2 =>
+    _custDark ? const Color(0xFF94A3B8) : const Color(0xFF7B6DAB);
+Color get _warning => const Color(0xFFBA7517);
+Color get _warnSoft =>
+    _custDark ? const Color(0xFF2A2110) : const Color(0xFFFAEEDA);
+Color get _danger => const Color(0xFFD93025);
+Color get _dangerSoft =>
+    _custDark ? const Color(0xFF2A1210) : const Color(0xFFFCECEB);
+
+class CustomerHomeScreen extends ConsumerStatefulWidget {
   const CustomerHomeScreen({super.key});
 
   @override
-  State<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
+  ConsumerState<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
 }
 
-class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
+class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
   int _selectedIndex = 0;
+  int _leaveRefresh = 0;
   int _unreadCount = 0;
+  Timer? _unreadTimer;
   String? _vendorUpiId;
   String _vendorPayLabel = 'vendor';
 
-  // My Plan tab removed from shell — see commented block below (_CustomerMyPlanTab).
-  static final List<Widget> _tabs = [
+  // New instances each build so theme changes rebuild the tabs.
+  // State is kept because the widget type and position stay the same.
+  List<Widget> get _tabs => [
     RepaintBoundary(child: _CustomerHomeTab()),
     RepaintBoundary(child: _CustomerOrdersTab()),
+    RepaintBoundary(
+      child: CustomerLeaveRequestsScreen(
+        embedded: true,
+        refreshToken: _leaveRefresh,
+      ),
+    ),
     RepaintBoundary(child: _CustomerWalletTab()),
     RepaintBoundary(child: _CustomerProfileTab()),
   ];
@@ -71,7 +112,16 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   void initState() {
     super.initState();
     _loadUnreadCount();
+    _unreadTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) _loadUnreadCount();
+    });
     _loadVendorUpiBanner();
+  }
+
+  @override
+  void dispose() {
+    _unreadTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadVendorUpiBanner() async {
@@ -92,132 +142,73 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           _vendorPayLabel = label;
         });
       }
-      await _maybeShowAnnouncementPopup(profile);
     } catch (_) {
       if (mounted) setState(() => _vendorUpiId = null);
     }
   }
 
-  /// One-time dialog when vendor portal announcement text changes (per owner + updatedAt).
-  Future<void> _maybeShowAnnouncementPopup(CustomerModel profile) async {
-    final ownerId = profile.ownerId?.trim() ?? '';
-    if (ownerId.isEmpty || !mounted) return;
-
-    final text = profile.vendor?.announcementText?.trim() ?? '';
-    if (text.isEmpty) return;
-
-    final at = profile.vendor?.announcementUpdatedAt;
-    if (at == null) return;
-
-    final stamp = at.toUtc().toIso8601String();
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'portal_ann_seen_$ownerId';
-    if (prefs.getString(key) == stamp) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: true,
-        builder: (ctx) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.campaign_rounded, color: _green700, size: 26),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Announcement',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: _text1,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.45,
-                color: _text1,
-              ),
-            ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              style: FilledButton.styleFrom(
-                backgroundColor: _green700,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-      await prefs.setString(key, stamp);
-    });
-  }
-
   Future<void> _loadUnreadCount() async {
     try {
-      final res = await NotificationApi.getMyNotifications();
+      final res = await CustomerPortalApi.getMyNotifications(limit: 50);
       final list = (res['notifications'] as List?) ?? [];
-      final unread = list.where((n) => n is Map && n['read'] == false).length;
+      final unread = list.where((n) {
+        if (n is NotificationModel) return !n.read;
+        return false;
+      }).length;
       if (mounted) setState(() => _unreadCount = unread);
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
+    CustomerChrome.brightness = Theme.of(context).brightness;
+    final dark = ref.watch(themeModeProvider) == ThemeMode.dark;
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        backgroundColor: _surface,
-        foregroundColor: _text1,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        surfaceTintColor: Colors.transparent,
-        titleSpacing: 16,
-        title: Row(
+        flexibleSpace: const Stack(
+          fit: StackFit.expand,
           children: [
-            Container(
-              width: 32,
-              height: 32,
+            DecoratedBox(
               decoration: BoxDecoration(
-                color: _green100,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: _border),
-              ),
-              child: const Center(
-                child: Text(
-                  'iM',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: _green700,
-                  ),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF7B3FE4),
+                    Color(0xFF6B35C8),
+                    Color(0xFF3B1578),
+                  ],
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'myMeals',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: _text1,
-                letterSpacing: 0.2,
               ),
             ),
           ],
         ),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        surfaceTintColor: Colors.transparent,
+        titleSpacing: 16,
+        title: Text(
+          tr('myMeals'),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
         actions: [
+          IconButton(
+            tooltip: dark ? tr('lightMode') : tr('darkMode'),
+            onPressed: () => ref.read(themeModeProvider.notifier).toggle(),
+            icon: Icon(
+              dark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
+              color: Colors.white,
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
               onTap: () async {
                 await context.push(AppRoutes.customerNotifications);
@@ -230,14 +221,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: _green50,
+                      color: Colors.white.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _border),
                     ),
                     child: const Icon(
                       Icons.notifications_outlined,
                       size: 20,
-                      color: _green700,
+                      color: Colors.white,
                     ),
                   ),
                   if (_unreadCount > 0)
@@ -269,10 +259,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             ),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: _border),
-        ),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -300,7 +286,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 _NavItem(
                   icon: Icons.home_outlined,
                   activeIcon: Icons.home_rounded,
-                  label: 'Home',
+                  label: tr('home'),
                   index: 0,
                   selected: _selectedIndex == 0,
                   onTap: () => setState(() => _selectedIndex = 0),
@@ -308,26 +294,37 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 _NavItem(
                   icon: Icons.receipt_long_outlined,
                   activeIcon: Icons.receipt_long_rounded,
-                  label: 'Orders',
+                  label: tr('orders'),
                   index: 1,
                   selected: _selectedIndex == 1,
                   onTap: () => setState(() => _selectedIndex = 1),
                 ),
                 _NavItem(
-                  icon: Icons.account_balance_wallet_outlined,
-                  activeIcon: Icons.account_balance_wallet_rounded,
-                  label: 'Wallet',
+                  icon: Icons.event_busy_outlined,
+                  activeIcon: Icons.event_busy_rounded,
+                  label: tr('leave'),
                   index: 2,
                   selected: _selectedIndex == 2,
-                  onTap: () => setState(() => _selectedIndex = 2),
+                  onTap: () => setState(() {
+                    _selectedIndex = 2;
+                    _leaveRefresh++;
+                  }),
+                ),
+                _NavItem(
+                  icon: Icons.account_balance_wallet_outlined,
+                  activeIcon: Icons.account_balance_wallet_rounded,
+                  label: tr('wallet'),
+                  index: 3,
+                  selected: _selectedIndex == 3,
+                  onTap: () => setState(() => _selectedIndex = 3),
                 ),
                 _NavItem(
                   icon: Icons.person_outline_rounded,
                   activeIcon: Icons.person_rounded,
-                  label: 'Profile',
-                  index: 3,
-                  selected: _selectedIndex == 3,
-                  onTap: () => setState(() => _selectedIndex = 3),
+                  label: tr('profile'),
+                  index: 4,
+                  selected: _selectedIndex == 4,
+                  onTap: () => setState(() => _selectedIndex = 4),
                 ),
               ],
             ),
@@ -429,7 +426,7 @@ class _CustomerVendorUpiBanner extends StatelessWidget {
                   children: [
                     Text(
                       'Pay $vendorLabel (UPI)',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                         color: _text2,
@@ -438,7 +435,7 @@ class _CustomerVendorUpiBanner extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       upiId,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: _text1,
@@ -461,6 +458,20 @@ class _CustomerVendorUpiBanner extends StatelessWidget {
 // Home Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _HomeNotice {
+  const _HomeNotice({
+    required this.title,
+    required this.body,
+    required this.unread,
+    this.dateLabel,
+  });
+
+  final String title;
+  final String body;
+  final bool unread;
+  final String? dateLabel;
+}
+
 class _CustomerHomeTab extends StatefulWidget {
   const _CustomerHomeTab();
   @override
@@ -474,6 +485,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
   PublicPortalAnnouncement? _portalAnnouncement;
   /// Banner hidden until text changes (same session).
   String? _dismissedAnnouncementText;
+  _HomeNotice? _leaveNotice;
   bool _loading = true;
   Timer? _refreshTimer;
 
@@ -510,12 +522,14 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
           (oid != null && oid.isNotEmpty)
               ? await CustomerPortalApi.getPublicPortalAnnouncement(oid)
               : null;
+      final notice = await _latestLeaveNotice();
       if (mounted) {
         setState(() {
           _todayOrder = order;
           _profile = profile;
           _balance = balance;
           _portalAnnouncement = announcement;
+          _leaveNotice = notice;
         });
       }
     } catch (e) {
@@ -523,6 +537,69 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<_HomeNotice?> _latestLeaveNotice() async {
+    try {
+      final res = await CustomerPortalApi.getMyNotifications(limit: 30);
+      final list = (res['notifications'] as List?)
+              ?.whereType<NotificationModel>()
+              .toList() ??
+          [];
+      for (final n in list) {
+        final type = (n.type ?? '').toLowerCase();
+        if (type == 'leave_approved' ||
+            type == 'leave_rejected' ||
+            type == 'vendor_holiday') {
+          return _HomeNotice(
+            title: n.title.isEmpty ? tr('leaveUpdate') : n.title,
+            body: n.body,
+            unread: !n.read,
+            dateLabel: _noticeDateLabel(n.data?['leaveDate']?.toString()),
+          );
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final res = await LeaveApi.getLeavesForCustomer(limit: 20);
+      final leaves =
+          (res['leaves'] as List?)?.whereType<LeaveRequestModel>().toList() ??
+              [];
+      for (final leave in leaves) {
+        final status = leave.status.toLowerCase();
+        final vendorHoliday = leave.requestedBy.toLowerCase() == 'vendor';
+        final when = DateFormat('EEE, d MMM').format(leave.date.toLocal());
+        final meal = leave.mealType.isEmpty
+            ? tr('mealWord')
+            : '${leave.mealType[0].toUpperCase()}${leave.mealType.substring(1)}';
+        if (vendorHoliday && status == 'approved') {
+          return _HomeNotice(
+            title: tr('vendorHoliday'),
+            body: trf('vendorHolidayBody', {'when': when}),
+            unread: true,
+            dateLabel: when,
+          );
+        }
+        if (!vendorHoliday && status == 'approved') {
+          return _HomeNotice(
+            title: tr('leaveApproved'),
+            body: trf('leaveApprovedBody', {'meal': meal, 'when': when}),
+            unread: true,
+            dateLabel: when,
+          );
+        }
+        if (!vendorHoliday && status == 'rejected') {
+          return _HomeNotice(
+            title: tr('leaveRejected'),
+            body: trf('leaveRejectedBody', {'meal': meal, 'when': when}),
+            unread: true,
+            dateLabel: when,
+          );
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static String _statusLabel(String status) =>
@@ -538,54 +615,117 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
     return (_text2, _divider);
   }
 
-  // ── 30-day daily thoughts ────────────────────────────────────────────────
-  static const _dailyThoughts = [
-    (Icons.restaurant_rounded, 'Your taste is our responsibility'),
-    (Icons.local_fire_department_rounded, 'Fresh, hot, delivered with love'),
-    (Icons.favorite_outline_rounded, 'Eat well, live well, feel well'),
-    (Icons.eco_rounded, 'Real food. Real ingredients. Real care'),
-    (Icons.star_outline_rounded, 'Every meal crafted with purpose'),
-    (Icons.lunch_dining_rounded, 'Good food is the foundation of happiness'),
-    (Icons.timer_outlined, 'On time, every time — your tiffin awaits'),
-    (Icons.spa_outlined, 'Nourish your body, fuel your day'),
-    (Icons.rice_bowl_outlined, 'Homestyle food, delivered to your door'),
-    (Icons.emoji_food_beverage_outlined, 'Taste the warmth in every bite'),
-    (Icons.local_dining_rounded, 'Made with care, served with heart'),
-    (Icons.health_and_safety_outlined, 'Wholesome meals for a wholesome you'),
-    (Icons.access_time_rounded, 'Skip the kitchen, not the nutrition'),
-    (Icons.thumb_up_outlined, 'Quality you can taste, service you can trust'),
-    (Icons.people_outline_rounded, 'Feeding families, one tiffin at a time'),
-    (Icons.kitchen_rounded, 'Just like home, only better'),
-    (Icons.water_drop_outlined, 'Freshness guaranteed in every container'),
-    (Icons.light_mode_outlined, 'Start your day right with a perfect meal'),
-    (Icons.nights_stay_outlined, 'End your day with a satisfying dinner'),
-    (Icons.breakfast_dining_rounded, 'Morning fuel prepared just for you'),
-    (Icons.volunteer_activism_outlined, 'Every meal is a promise we keep'),
-    (Icons.verified_outlined, 'Consistency is our secret ingredient'),
-    (Icons.local_shipping_outlined, 'From our kitchen to your doorstep'),
-    (Icons.forest_outlined, 'Natural ingredients, authentic flavors'),
-    (Icons.groups_outlined, 'Connecting people through great food'),
-    (Icons.wb_sunny_outlined, 'Sunshine on a plate, every single day'),
-    (Icons.bolt_outlined, 'Power your day with the right nutrition'),
-    (Icons.celebration_outlined, 'Every meal is worth celebrating'),
-    (Icons.diversity_3_outlined, 'Diverse flavors, one great service'),
-    (Icons.workspace_premium_outlined, 'Premium taste, everyday pricing'),
-  ];
-
-  (IconData, String) get _todaysThought {
-    final idx = DateTime.now().day % _dailyThoughts.length;
-    return _dailyThoughts[idx];
-  }
-
-  bool get _hasActivePortalAnnouncement =>
-      (_portalAnnouncement?.text.trim().isNotEmpty ?? false);
-
   bool get _showAnnouncementBanner {
     final ann = _portalAnnouncement;
     if (ann == null) return false;
     final t = ann.text.trim();
     if (t.isEmpty) return false;
     return _dismissedAnnouncementText != t;
+  }
+
+  String? _noticeDateLabel(String? raw) {
+    if (raw == null || raw.length < 10) return null;
+    final parts = raw.substring(0, 10).split('-');
+    if (parts.length != 3) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return DateFormat('EEE, d MMM yyyy').format(DateTime(year, month, day));
+  }
+
+  Widget _leaveNoticeCard(_HomeNotice notice) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => context.push(AppRoutes.customerNotifications),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _violet50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _violet100),
+                ),
+                child: Icon(
+                  Icons.notifications_active_outlined,
+                  color: _violet600,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            notice.title,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _text1,
+                            ),
+                          ),
+                        ),
+                        if (notice.unread)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _violet100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'New',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _violet700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (notice.dateLabel != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        notice.dateLabel!,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _violet700,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(
+                      notice.body,
+                      style: TextStyle(fontSize: 13, height: 1.35, color: _text2),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _portalAnnouncementHeading(PublicPortalAnnouncement a) {
@@ -599,14 +739,12 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading && _todayOrder == null && _profile == null && _balance == null) {
-      return const Center(child: CircularProgressIndicator(color: _green600));
+      return Center(child: CircularProgressIndicator(color: _green600));
     }
     final walletBalance = _balance?.walletBalance ?? _profile?.balance ?? 0.0;
     final subscriptionBalance = _balance?.subscriptionBalance ?? 0.0;
-    final showNoChargeHint = _hasActivePortalAnnouncement;
     final lowBalance = walletBalance < 100;
     final firstName = (_profile?.name ?? 'there').split(' ').first;
-    final (thoughtIcon, thoughtText) = _todaysThought;
 
     return RefreshIndicator(
       color: _green600,
@@ -632,14 +770,14 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                   children: [
                     Text(
                       'Hello, $firstName!',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: _text1,
                       ),
                     ),
                     const SizedBox(height: 2),
-                    const Text(
+                    Text(
                       "Here's your tiffin update",
                       style: TextStyle(fontSize: 13, color: _text2),
                     ),
@@ -657,7 +795,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                 child: Center(
                   child: Text(
                     (_profile?.name ?? '?')[0].toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: _green700,
@@ -670,62 +808,25 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
 
           const SizedBox(height: 14),
 
-          // ── Daily thought card ────────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: _violet50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _violet100),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: _violet100,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _violet100),
-                  ),
-                  child: Icon(thoughtIcon, size: 18, color: _violet600),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    thoughtText,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: _violet700,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 18),
+          if (_leaveNotice != null) ...[
+            _leaveNoticeCard(_leaveNotice!),
+            const SizedBox(height: 18),
+          ],
 
           // ── Today's meal card ─────────────────────────────────────────────
-          _sectionLabel("Today's Meal"),
+          _sectionLabel(tr('todaysMeal')),
           const SizedBox(height: 8),
           _todayOrder == null ? _emptyMealCard() : _mealCard(_todayOrder!),
 
           const SizedBox(height: 20),
 
           // ── Wallet card ───────────────────────────────────────────────────
-          _sectionLabel('Wallet'),
+          _sectionLabel(tr('wallet')),
           const SizedBox(height: 8),
-          _walletCard(
-            walletBalance,
-            subscriptionBalance,
-            showNoChargeHint: showNoChargeHint,
-          ),
+          _walletCard(walletBalance, subscriptionBalance),
 
           const SizedBox(height: 20),
-          _sectionLabel('Quick Actions'),
+          _sectionLabel(tr('quickActions')),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
@@ -763,19 +864,19 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: _violet100),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.event_busy_rounded,
                           color: _violet600,
                           size: 20,
                         ),
                       ),
                       const SizedBox(width: 14),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'My Leave Requests',
+                              tr('myLeaveRequests'),
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -790,10 +891,75 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                           ],
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         Icons.chevron_right_rounded,
                         color: _text2,
                       ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _border),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => const CustomerMonthlyBillsScreen(),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _violet50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _violet100),
+                        ),
+                        child: Icon(
+                          Icons.receipt_long_rounded,
+                          color: _violet600,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tr('monthlyBills'),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: _text1,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'View and download receipts. Approved leave is not charged.',
+                              style: TextStyle(fontSize: 12, color: _text2),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: _text2),
                     ],
                   ),
                 ),
@@ -813,13 +979,13 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.warning_amber_rounded,
                     color: _warning,
                     size: 20,
                   ),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Low balance. Top up to avoid service interruption.',
                       style: TextStyle(
@@ -857,7 +1023,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
         children: [
           Container(
             height: 3,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: _green600,
               borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
             ),
@@ -873,7 +1039,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                     color: _green100,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.lunch_dining_rounded,
                     size: 22,
                     color: _green700,
@@ -886,7 +1052,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                     children: [
                       Text(
                         order.slot ?? "Today's meal",
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: _text1,
@@ -942,14 +1108,14 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: _border),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.lunch_dining_outlined,
             size: 22,
             color: _text2,
           ),
         ),
         const SizedBox(width: 12),
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -979,18 +1145,9 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1),
+        color: _surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0xFFFFC107).withValues(alpha: 0.55),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFFA000).withValues(alpha: 0.12),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: _violet600.withValues(alpha: 0.45)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1001,12 +1158,12 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFECB3),
+                  color: _violet100,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.campaign_rounded,
-                  color: Color(0xFFF57C00),
+                  color: _violet600,
                   size: 22,
                 ),
               ),
@@ -1017,16 +1174,16 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                   children: [
                     Text(
                       _portalAnnouncementHeading(a),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFFE65100),
+                        color: _violet700,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       a.text.trim(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         height: 1.4,
                         color: _text1,
@@ -1037,42 +1194,13 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                       const SizedBox(height: 8),
                       Text(
                         'Updated: ${_announcementDateFmt.format(updated.toLocal())}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: _text2,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _warnSoft,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _warning.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.payments_rounded, size: 15, color: _warning),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'No charge today',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _warning,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1082,7 +1210,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                     _dismissedAnnouncementText = a.text.trim();
                   });
                 },
-                icon: const Icon(Icons.close_rounded, size: 20, color: _text2),
+                icon: Icon(Icons.close_rounded, size: 20, color: _text2),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(
                   minWidth: 32,
@@ -1097,11 +1225,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
     );
   }
 
-  Widget _walletCard(
-    double walletBalance,
-    double subscriptionBalance, {
-    required bool showNoChargeHint,
-  }) =>
+  Widget _walletCard(double walletBalance, double subscriptionBalance) =>
       Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
@@ -1119,7 +1243,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
             color: _violet100,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.account_balance_wallet_rounded,
             size: 22,
             color: _violet600,
@@ -1132,13 +1256,13 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
             children: [
               Text(
                 'Rs.${walletBalance.toStringAsFixed(0)}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: _violet700,
                 ),
               ),
-              const Text(
+              Text(
                 'Available balance',
                 style: TextStyle(fontSize: 12, color: _text2),
               ),
@@ -1150,34 +1274,12 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
                 children: [
                   Text(
                     'Subscription: Rs.${subscriptionBalance.toStringAsFixed(0)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: _text2,
                     ),
                   ),
-                  if (showNoChargeHint)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _warnSoft,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _warning.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: const Text(
-                        'No charge today',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: _warning,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ],
@@ -1200,7 +1302,7 @@ class _CustomerHomeTabState extends State<_CustomerHomeTab> {
       const SizedBox(width: 7),
       Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: _text2,
@@ -1284,7 +1386,7 @@ class _CustomerMyPlanTabState extends State<_CustomerMyPlanTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _green600));
+      return Center(child: CircularProgressIndicator(color: _green600));
     }
     if (_todayOrder == null) {
       return Center(
@@ -1298,14 +1400,14 @@ class _CustomerMyPlanTabState extends State<_CustomerMyPlanTab> {
                 color: _green100,
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.restaurant_menu_outlined,
                 size: 32,
                 color: _green700,
               ),
             ),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'No order for today',
               style: TextStyle(
                 fontSize: 15,
@@ -1314,7 +1416,7 @@ class _CustomerMyPlanTabState extends State<_CustomerMyPlanTab> {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Your plan will appear here',
               style: TextStyle(fontSize: 13, color: _text2),
             ),
@@ -1335,7 +1437,7 @@ class _CustomerMyPlanTabState extends State<_CustomerMyPlanTab> {
             children: [
               _sectionLabel('Your Plan'),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Adjust quantities (min 1). Tap Save to apply.',
                 style: TextStyle(fontSize: 12, color: _text2),
               ),
@@ -1360,7 +1462,7 @@ class _CustomerMyPlanTabState extends State<_CustomerMyPlanTab> {
             height: 50,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [_violet700, _violet600],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
@@ -1422,7 +1524,7 @@ class _CustomerMyPlanTabState extends State<_CustomerMyPlanTab> {
       const SizedBox(width: 7),
       Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: _text2,
@@ -1463,7 +1565,7 @@ class _PlanItemStepper extends StatelessWidget {
         Expanded(
           child: Text(
             item.name,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: _text1,
@@ -1505,7 +1607,7 @@ class _PlanItemStepper extends StatelessWidget {
                 child: Center(
                   child: Text(
                     '${item.quantity}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: _text1,
@@ -1525,7 +1627,7 @@ class _PlanItemStepper extends StatelessWidget {
                     color: _violet100,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.add_rounded,
                     size: 16,
                     color: _violet600,
@@ -1551,10 +1653,30 @@ class _CustomerOrdersTab extends StatefulWidget {
   State<_CustomerOrdersTab> createState() => _CustomerOrdersTabState();
 }
 
+class _PlanMeal {
+  const _PlanMeal({
+    required this.date,
+    required this.title,
+    required this.status,
+    required this.cancelled,
+    this.order,
+  });
+
+  final DateTime date;
+  final String title;
+  final String status;
+  final bool cancelled;
+  final OrderModel? order;
+
+  String get statusLabel => cancelled ? tr('orderCancelled') : status;
+}
+
 class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
-  List<OrderModel> _orders = [];
+  List<_PlanMeal> _meals = [];
+  String? _rangeLabel;
   bool _loading = true;
   String? _statusFilter;
+  int _ordersPage = 1;
   Timer? _refreshTimer;
 
   static const List<String?> _statusValues = [
@@ -1563,13 +1685,15 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
     'processing',
     'out_for_delivery',
     'delivered',
+    'cancelled',
   ];
-  static const List<String> _statusLabels = [
-    'All',
-    'Pending',
-    'Processing',
-    'Out for delivery',
-    'Delivered',
+  static const List<String> _statusKeys = [
+    'all',
+    'pending',
+    'processing',
+    'outForDelivery',
+    'delivered',
+    'cancelled',
   ];
 
   @override
@@ -1595,21 +1719,203 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
     super.dispose();
   }
 
+  List<_PlanMeal> get _visibleMeals {
+    final filter = _statusFilter;
+    if (filter == null) return _meals;
+    if (filter == 'cancelled') {
+      return _meals.where((meal) => meal.cancelled).toList();
+    }
+    return _meals
+        .where((meal) => !meal.cancelled && meal.status == filter)
+        .toList();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final res = await CustomerPortalApi.getMyOrders(
-        page: 1,
-        limit: 50,
-        status: _statusFilter,
-      );
-      final orders = (res['orders'] as List<OrderModel>? ?? []);
-      if (mounted) setState(() => _orders = orders);
+      final orders = <OrderModel>[];
+      var page = 1;
+      var totalPages = 1;
+      do {
+        final res = await CustomerPortalApi.getMyOrders(page: page, limit: 50);
+        orders.addAll(res['orders'] as List<OrderModel>? ?? []);
+        totalPages = (res['totalPages'] as int?) ?? 1;
+        page++;
+      } while (page <= totalPages && page <= 8);
+
+      SubscriptionModel? plan;
+      try {
+        plan = await CustomerPortalApi.getMyActivePlan();
+      } catch (_) {}
+
+      var leaves = <LeaveRequestModel>[];
+      try {
+        final res = await LeaveApi.getLeavesForCustomer(limit: 100);
+        leaves = List<LeaveRequestModel>.from(res['leaves'] as Iterable);
+      } catch (_) {}
+
+      final built = _buildMealCalendar(orders, plan, leaves);
+      if (mounted) {
+        setState(() {
+          _meals = built.meals;
+          _rangeLabel = built.rangeLabel;
+        });
+      }
     } catch (e) {
       if (mounted) ErrorHandler.show(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  static DateTime _utcDay(DateTime value) {
+    final utc = value.toUtc();
+    return DateTime.utc(utc.year, utc.month, utc.day);
+  }
+
+  static String _dayKey(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  static String _prettyMeal(String raw) {
+    final text = raw.trim().replaceAll('_', ' ');
+    if (text.isEmpty) return 'Daily tiffin';
+    return text[0].toUpperCase() + text.substring(1);
+  }
+
+  static bool _isCancelledStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'skipped':
+      case 'cancelled':
+      case 'failed':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool _leaveCoversMeal(LeaveRequestModel leave, String meal) {
+    if (leave.status.toLowerCase() != 'approved') return false;
+    final type = leave.mealType.toLowerCase();
+    return type == 'all' || type == 'both' || type == meal;
+  }
+
+  static bool _isVendorHolidayLeave(LeaveRequestModel leave, String meal) {
+    return leave.requestedBy.toLowerCase() == 'vendor' &&
+        _leaveCoversMeal(leave, meal);
+  }
+
+  static bool _isVendorHolidayOrder(OrderModel order) {
+    return (order.cancellationReason ?? '').toLowerCase().contains('holiday');
+  }
+
+  static String _displayStatus(String status) {
+    if (_isCancelledStatus(status)) return tr('orderCancelled');
+    return OrderStatus.fromApi(status).label;
+  }
+
+  ({List<_PlanMeal> meals, String? rangeLabel}) _buildMealCalendar(
+    List<OrderModel> orders,
+    SubscriptionModel? plan,
+    List<LeaveRequestModel> leaves,
+  ) {
+    final meals = plan?.mealTypes ?? const <String>[];
+    if (plan == null || meals.isEmpty) {
+      final rows = orders
+          .where((order) => !_isVendorHolidayOrder(order))
+          .map((order) {
+        final cancelled = _isCancelledStatus(order.status);
+        final mealName = (order.mealTime ?? '').trim().isNotEmpty
+            ? order.mealTime!
+            : (order.slot ?? 'Daily tiffin');
+        return _PlanMeal(
+          date: _utcDay(order.date),
+          title: _prettyMeal(mealName),
+          status: cancelled
+              ? 'cancelled'
+              : OrderStatus.fromApi(order.status).apiValue,
+          cancelled: cancelled,
+          order: order,
+        );
+      }).toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
+      return (meals: rows, rangeLabel: null);
+    }
+
+    final start = _utcDay(plan.startDate);
+    var end = _utcDay(plan.endDate);
+    if (end.isBefore(start)) end = start;
+    if (end.difference(start).inDays > 120) {
+      end = start.add(const Duration(days: 120));
+    }
+
+    final deliveryDays = (plan.deliveryDays == null || plan.deliveryDays!.isEmpty)
+        ? <int>{0, 1, 2, 3, 4, 5, 6}
+        : plan.deliveryDays!.toSet();
+
+    final ordersByDay = <String, List<OrderModel>>{};
+    for (final order in orders) {
+      ordersByDay.putIfAbsent(_dayKey(_utcDay(order.date)), () => []).add(order);
+    }
+    final leavesByDay = <String, List<LeaveRequestModel>>{};
+    for (final leave in leaves) {
+      leavesByDay.putIfAbsent(_dayKey(_utcDay(leave.date)), () => []).add(leave);
+    }
+
+    final rows = <_PlanMeal>[];
+    for (var day = start; !day.isAfter(end); day = day.add(const Duration(days: 1))) {
+      if (!deliveryDays.contains(day.weekday % 7)) continue;
+      final paused = plan.status == 'paused' &&
+          plan.pausedFrom != null &&
+          plan.pausedUntil != null &&
+          !day.isBefore(_utcDay(plan.pausedFrom!)) &&
+          !day.isAfter(_utcDay(plan.pausedUntil!));
+      final dayOrders = ordersByDay[_dayKey(day)] ?? const <OrderModel>[];
+      final dayLeaves = leavesByDay[_dayKey(day)] ?? const <LeaveRequestModel>[];
+
+      for (final meal in meals) {
+        OrderModel? match;
+        for (final order in dayOrders) {
+          final orderMeal = (order.mealTime ?? '').toLowerCase();
+          if (orderMeal.isEmpty || orderMeal == meal) {
+            match = order;
+            if (orderMeal == meal) break;
+          }
+        }
+        final vendorClosed = dayLeaves.any(
+          (leave) => _isVendorHolidayLeave(leave, meal),
+        );
+        if (vendorClosed) continue;
+        final covered = dayLeaves.any((leave) => _leaveCoversMeal(leave, meal));
+        if (match != null && _isVendorHolidayOrder(match)) continue;
+        final cancelled = paused
+            ? false
+            : covered || (match != null && _isCancelledStatus(match.status));
+        final status = paused
+            ? 'paused'
+            : cancelled
+                ? 'cancelled'
+                : match == null
+                    ? 'pending'
+                    : OrderStatus.fromApi(match.status).apiValue;
+        rows.add(
+          _PlanMeal(
+            date: day,
+            title: _prettyMeal(meal),
+            status: status,
+            cancelled: cancelled,
+            order: match,
+          ),
+        );
+      }
+    }
+
+    final label =
+        '${DateFormat('d MMM').format(DateTime(start.year, start.month, start.day))}'
+        ' – ${DateFormat('d MMM yyyy').format(DateTime(end.year, end.month, end.day))}'
+        ' · ${rows.length} meal days';
+    return (meals: rows, rangeLabel: label);
   }
 
   void _showOrderStatusSheet(OrderModel o) {
@@ -1621,8 +1927,12 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
     );
   }
 
-  static (Color, Color, String) _statusMeta(String status) {
-    final o = OrderStatus.fromApi(status);
+  static (Color, Color, String) _statusMeta(_PlanMeal meal) {
+    if (meal.cancelled || meal.status == 'paused') {
+      final label = meal.cancelled ? tr('orderCancelled') : tr('paused');
+      return (_danger, _dangerSoft, label);
+    }
+    final o = OrderStatus.fromApi(meal.status);
     if (o == OrderStatus.delivered) {
       return (_violet600, _violet50, o.label);
     }
@@ -1632,7 +1942,7 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
     if (o == OrderStatus.processing) {
       return (_warning, _warnSoft, o.label);
     }
-    return (_text2, _divider, o.label);
+    return (_text2, _divider, _displayStatus(meal.status));
   }
 
   @override
@@ -1651,13 +1961,16 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
               MediaQuery.of(context).padding.bottom + 10,
             ),
             child: Row(
-              children: List.generate(_statusLabels.length, (i) {
+              children: List.generate(_statusKeys.length, (i) {
                 final sel = _statusFilter == _statusValues[i];
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: GestureDetector(
                     onTap: () {
-                      setState(() => _statusFilter = _statusValues[i]);
+                      setState(() {
+                        _statusFilter = _statusValues[i];
+                        _ordersPage = 1;
+                      });
                       _load();
                     },
                     child: AnimatedContainer(
@@ -1672,7 +1985,7 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                         border: Border.all(color: sel ? _green700 : _border),
                       ),
                       child: Text(
-                        _statusLabels[i],
+                        tr(_statusKeys[i]),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1686,13 +1999,27 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
             ),
           ),
         ),
+        if (_rangeLabel != null)
+          Container(
+            width: double.infinity,
+            color: _surface,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Text(
+              _rangeLabel!,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _text2,
+              ),
+            ),
+          ),
         Expanded(
-          child: _loading && _orders.isEmpty
-              ? const Center(child: CircularProgressIndicator(color: _green600))
+          child: _loading && _meals.isEmpty
+              ? Center(child: CircularProgressIndicator(color: _green600))
               : RefreshIndicator(
                   color: _green600,
                   onRefresh: _load,
-                  child: _orders.isEmpty
+                  child: _visibleMeals.isEmpty
                       ? ListView(
                           padding: EdgeInsets.only(
                             bottom:
@@ -1711,15 +2038,15 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                                       color: _green100,
                                       borderRadius: BorderRadius.circular(18),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.receipt_long_outlined,
                                       size: 32,
                                       color: _green700,
                                     ),
                                   ),
                                   const SizedBox(height: 14),
-                                  const Text(
-                                    'No orders yet',
+                                  Text(
+                                    'No meals in this view',
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
@@ -1731,21 +2058,41 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                             ),
                           ],
                         )
-                      : ListView.builder(
+                      : Builder(builder: (context) {
+                          final window = PageWindow.slice(
+                            _visibleMeals,
+                            _ordersPage,
+                          );
+                          return ListView.builder(
                           padding: EdgeInsets.fromLTRB(
                             16,
                             12,
                             16,
                             MediaQuery.of(context).padding.bottom + 32,
                           ),
-                          itemCount: _orders.length,
+                          itemCount: window.items.length +
+                              (window.total > kListPageSize ? 1 : 0),
                           itemBuilder: (ctx, i) {
-                            final o = _orders[i];
-                            final (sc, sb, sl) = _statusMeta(o.status);
+                            if (i >= window.items.length) {
+                              return AppListPager(
+                                page: window.page,
+                                total: window.total,
+                                onPage: (p) => setState(() => _ordersPage = p),
+                              );
+                            }
+                            final meal = window.items[i];
+                            final (sc, sb, sl) = _statusMeta(meal);
+                            final day = DateTime(
+                              meal.date.year,
+                              meal.date.month,
+                              meal.date.day,
+                            );
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: InkWell(
-                                onTap: () => _showOrderStatusSheet(o),
+                                onTap: meal.order == null
+                                    ? null
+                                    : () => _showOrderStatusSheet(meal.order!),
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
                                   padding: const EdgeInsets.all(14),
@@ -1760,15 +2107,21 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                                         width: 40,
                                         height: 40,
                                         decoration: BoxDecoration(
-                                          color: _green100,
+                                          color: meal.cancelled
+                                              ? _dangerSoft
+                                              : _green100,
                                           borderRadius: BorderRadius.circular(
                                             11,
                                           ),
                                         ),
-                                        child: const Icon(
-                                          Icons.lunch_dining_outlined,
+                                        child: Icon(
+                                          meal.cancelled
+                                              ? Icons.event_busy_rounded
+                                              : Icons.lunch_dining_outlined,
                                           size: 20,
-                                          color: _green700,
+                                          color: meal.cancelled
+                                              ? _danger
+                                              : _green700,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
@@ -1778,8 +2131,8 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              o.slot ?? 'Daily tiffin',
-                                              style: const TextStyle(
+                                              meal.title,
+                                              style: TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w700,
                                                 color: _text1,
@@ -1787,10 +2140,9 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              '${o.date.day.toString().padLeft(2, '0')}/'
-                                              '${o.date.month.toString().padLeft(2, '0')}/'
-                                              '${o.date.year}',
-                                              style: const TextStyle(
+                                              DateFormat('EEE, d MMM yyyy')
+                                                  .format(day),
+                                              style: TextStyle(
                                                 fontSize: 11,
                                                 color: _text2,
                                               ),
@@ -1827,7 +2179,8 @@ class _CustomerOrdersTabState extends State<_CustomerOrdersTab> {
                               ),
                             );
                           },
-                        ),
+                        );
+                        }),
                 ),
         ),
       ],
@@ -1924,7 +2277,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
       currentStep = 4;
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1959,15 +2312,15 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                   color: _green100,
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.receipt_long_rounded,
                   size: 20,
                   color: _green700,
                 ),
               ),
               const SizedBox(width: 12),
-              const Text(
-                'Order Status',
+              Text(
+                tr('orderStatus'),
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
@@ -1977,7 +2330,24 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
             ],
           ),
           const SizedBox(height: 20),
-          ...List.generate(4, (i) {
+          if (status == 'skipped' ||
+              status == 'cancelled' ||
+              status == 'failed')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                trf('orderCancelledOn', {
+                  'date': DateFormat('EEE, d MMM yyyy').format(DateTime(order.date.toUtc().year, order.date.toUtc().month, order.date.toUtc().day)),
+                }),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: _danger,
+                ),
+              ),
+            )
+          else
+            ...List.generate(4, (i) {
             final done = (i + 1) <= currentStep;
             final active = (i + 1) == currentStep;
             return Padding(
@@ -2021,7 +2391,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                         color: _violet100,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Now',
                         style: TextStyle(
                           fontSize: 10,
@@ -2055,7 +2425,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                         color: _green100,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.delivery_dining_rounded,
                         size: 20,
                         color: _green700,
@@ -2068,7 +2438,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                         children: [
                           Text(
                             order.deliveryStaffName ?? 'Delivery partner',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: _text1,
@@ -2077,7 +2447,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                           if (order.deliveryStaffPhone != null)
                             Text(
                               order.deliveryStaffPhone!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 color: _text2,
                               ),
@@ -2099,7 +2469,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                             color: _violet100,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.call_rounded,
                             size: 17,
                             color: _violet600,
@@ -2125,7 +2495,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                       children: [
                         Icon(Icons.radar_rounded, size: 20, color: _violet600),
                         const SizedBox(width: 10),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Live rider location',
                             style: TextStyle(
@@ -2142,7 +2512,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                         padding: const EdgeInsets.only(top: 4, left: 30),
                         child: Text(
                           'Updated ${_formatLiveAgo(_liveAt!)}',
-                          style: const TextStyle(fontSize: 11, color: _text2),
+                          style: TextStyle(fontSize: 11, color: _text2),
                         ),
                       ),
                     const SizedBox(height: 10),
@@ -2152,7 +2522,7 @@ class _OrderStatusSheetState extends State<_OrderStatusSheet> {
                         _live!.lng,
                       ),
                       icon: const Icon(Icons.map_rounded, size: 18),
-                      label: const Text(
+                      label: Text(
                         'Open rider on map',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
@@ -2221,7 +2591,7 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _green600));
+      return Center(child: CircularProgressIndicator(color: _green600));
     }
     final walletBalance = _balance?.walletBalance ?? 0.0;
     final subscriptionBalance = _balance?.subscriptionBalance ?? 0.0;
@@ -2264,7 +2634,7 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
                     color: _violet100,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.account_balance_wallet_rounded,
                     size: 26,
                     color: _violet600,
@@ -2276,13 +2646,13 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
                   children: [
                     Text(
                       'Rs.${walletBalance.toStringAsFixed(0)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
                         color: _violet700,
                       ),
                     ),
-                    const Text(
+                    Text(
                       'Available balance',
                       style: TextStyle(fontSize: 12, color: _text2),
                     ),
@@ -2302,13 +2672,13 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.warning_amber_rounded,
                     color: _warning,
                     size: 18,
                   ),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Low balance. Please top up to continue service.',
                       style: TextStyle(
@@ -2342,7 +2712,7 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: _border),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.subscriptions_rounded,
                     size: 18,
                     color: _green700,
@@ -2351,7 +2721,7 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
                 const SizedBox(width: 12),
                 Text(
                   'Rs.${subscriptionBalance.toStringAsFixed(0)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: _text1,
@@ -2380,14 +2750,14 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: _border),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.receipt_outlined,
                     size: 18,
                     color: _text2,
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
+                Text(
                   'No transactions yet.',
                   style: TextStyle(fontSize: 13, color: _text2),
                 ),
@@ -2412,7 +2782,7 @@ class _CustomerWalletTabState extends State<_CustomerWalletTab> {
       const SizedBox(width: 7),
       Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: _text2,
@@ -2516,7 +2886,7 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _green600));
+      return Center(child: CircularProgressIndicator(color: _green600));
     }
     final initial = (_profile?.name ?? '?')[0].toUpperCase();
 
@@ -2558,7 +2928,7 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
                   child: Center(
                     child: Text(
                       initial,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: _green700,
@@ -2573,7 +2943,7 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
                     children: [
                       Text(
                         _profile?.name ?? '',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: _text1,
@@ -2582,7 +2952,7 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
                       if (_profile?.phone != null)
                         Text(
                           _profile!.phone,
-                          style: const TextStyle(fontSize: 12, color: _text2),
+                          style: TextStyle(fontSize: 12, color: _text2),
                         ),
                     ],
                   ),
@@ -2614,19 +2984,19 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: _green200),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.my_location_rounded,
                       size: 18,
                       color: _green700,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Share Location with Vendor',
+                          tr('shareLocation'),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -2635,13 +3005,13 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Help us deliver faster to your door',
+                          tr('shareLocationSub'),
                           style: TextStyle(fontSize: 11, color: _text2),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
                     size: 18,
                     color: _text2,
@@ -2651,6 +3021,72 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
             ),
           ),
 
+          const SizedBox(height: 12),
+
+          Consumer(
+            builder: (context, ref, _) {
+              final dark = ref.watch(themeModeProvider) == ThemeMode.dark;
+              return InkWell(
+                onTap: () => ref.read(themeModeProvider.notifier).toggle(),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: _violet100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          dark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
+                          size: 18,
+                          color: _violet700,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tr('darkMode'),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: _text1,
+                              ),
+                            ),
+                            Text(
+                              dark ? tr('on') : tr('off'),
+                              style: TextStyle(fontSize: 11, color: _text2),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: dark,
+                        activeThumbColor: Colors.white,
+                        activeTrackColor: _violet600,
+                        onChanged: (_) =>
+                            ref.read(themeModeProvider.notifier).toggle(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 12),
+          const LanguagePickerTile(),
           const SizedBox(height: 12),
 
           // ── Logout ─────────────────────────────────────────────────────────
@@ -2667,10 +3103,10 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.logout_rounded, size: 16, color: _danger),
+                  Icon(Icons.logout_rounded, size: 16, color: _danger),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Logout',
+                  Text(
+                    tr('logout'),
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -2697,14 +3133,14 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
     controller: ctrl,
     validator: validator,
     maxLines: maxLines,
-    style: const TextStyle(
+    style: TextStyle(
       fontSize: 14,
       fontWeight: FontWeight.w500,
       color: _text1,
     ),
     decoration: InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(fontSize: 13, color: _text2),
+      labelStyle: TextStyle(fontSize: 13, color: _text2),
       prefixIcon: Padding(
         padding: const EdgeInsets.only(left: 14, right: 10),
         child: Icon(icon, size: 18, color: _green700),
@@ -2715,19 +3151,19 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: _border),
+        borderSide: BorderSide(color: _border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: _green600, width: 1.5),
+        borderSide: BorderSide(color: _green600, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: _danger),
+        borderSide: BorderSide(color: _danger),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: _danger, width: 1.5),
+        borderSide: BorderSide(color: _danger, width: 1.5),
       ),
     ),
   );
@@ -2746,7 +3182,7 @@ class _CustomerProfileTabState extends State<_CustomerProfileTab> {
       const SizedBox(width: 7),
       Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: _text2,

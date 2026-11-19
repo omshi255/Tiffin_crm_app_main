@@ -13,8 +13,8 @@ abstract final class FinanceCalculator {
     if (r == null) return FinanceStats.zero;
     final processedAmount = _finite(r.processedAmount);
     final refundAmount = _finite(r.refund);
-    final netRevenue = _finite(processedAmount - refundAmount);
-    final income = _finite(r.incomes);
+    final netRevenue = processedAmount;
+    final income = _finite(r.incomes + r.manual);
     final expenses = _finite(r.expenses);
     final profit = _finite(netRevenue + income - expenses);
     final deposit = _finite(r.deposits); // real deposits from backend
@@ -67,12 +67,12 @@ abstract final class FinanceCalculator {
       processedCount += r.processedCount;
       processedAmount += _finite(r.processedAmount);
       refundAmount += _finite(r.refund);
-      income += _finite(r.incomes);
+      income += _finite(r.incomes + r.manual);
       expenses += _finite(r.expenses);
       deposit += _finite(r.deposits);
     }
 
-    final netRevenue = _finite(processedAmount - refundAmount);
+    final netRevenue = _finite(processedAmount);
     final profit = _finite(netRevenue + income - expenses);
 
     final out = FinanceStats(

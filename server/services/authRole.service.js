@@ -52,12 +52,12 @@ export const resolveRoleForPhone = async (phone) => {
     })
       .select("ownerId userId")
       .lean(),
-    Customer.findOne({
+    Customer.find({
       phone: phoneRegex,
       isDeleted: { $ne: true },
-      status: "active",
     })
-      .select("ownerId _id")
+      .select("ownerId _id status")
+      .sort({ updatedAt: -1 })
       .lean(),
   ]);
 
@@ -68,11 +68,14 @@ export const resolveRoleForPhone = async (phone) => {
       staffId: staff._id.toString(),
     };
   }
-  if (customer) {
+  const savedCustomer = Array.isArray(customer)
+    ? customer.find((row) => row.status === "active") || customer[0]
+    : null;
+  if (savedCustomer) {
     return {
       role: "customer",
-      ownerId: customer.ownerId.toString(),
-      customerId: customer._id.toString(),
+      ownerId: savedCustomer.ownerId.toString(),
+      customerId: savedCustomer._id.toString(),
     };
   }
 

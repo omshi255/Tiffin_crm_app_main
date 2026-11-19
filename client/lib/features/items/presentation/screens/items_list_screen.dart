@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../core/widgets/bottom_sheet_handle.dart';
 import '../../data/item_api.dart';
 import '../../models/item_model.dart';
@@ -594,20 +595,19 @@ class _ItemsListScreenState extends State<ItemsListScreen> {
           : RefreshIndicator(
               color: _violet600,
               onRefresh: _load,
-              child: ListView.separated(
-                cacheExtent: 400,
+              child: PagedListView<ItemModel>(
                 padding: EdgeInsets.only(
                   top: 6,
                   bottom: MediaQuery.of(context).padding.bottom + 92,
                 ),
-                itemCount: _items.length,
+                items: _items,
                 separatorBuilder: (_, _) => Container(
                   height: 1,
                   margin: const EdgeInsets.only(left: 16),
                   color: isDark ? _D.divider : _divider,
                 ),
-                itemBuilder: (ctx, i) =>
-                    RepaintBoundary(child: _buildItemCard(_items[i], isDark)),
+                itemBuilder: (ctx, item, i) =>
+                    RepaintBoundary(child: _buildItemCard(item, isDark)),
               ),
             ),
     );

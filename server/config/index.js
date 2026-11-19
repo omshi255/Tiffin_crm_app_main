@@ -1,6 +1,7 @@
 import path from "path";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
+import { resolveOtpBypassMode } from "./otpBypass.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
@@ -45,8 +46,8 @@ const optional = {
       "Too many requests, please try again later.",
   },
   LEAVE_CUTOFFS: {
-    breakfast: process.env.LEAVE_CUTOFF_BREAKFAST || "09:30",
-    lunch: process.env.LEAVE_CUTOFF_LUNCH || "12:00",
+    breakfast: process.env.LEAVE_CUTOFF_BREAKFAST || "08:00",
+    lunch: process.env.LEAVE_CUTOFF_LUNCH || "10:00",
     dinner: process.env.LEAVE_CUTOFF_DINNER || "19:00",
   },
 };
@@ -55,6 +56,15 @@ for (const key of required) {
   if (!process.env[key]) {
     throw new Error(`Missing required env: ${key}`);
   }
+}
+
+if (
+  String(process.env.OTP_BYPASS_MODE || "").trim().toLowerCase() === "true" &&
+  (process.env.NODE_ENV || "development") === "production"
+) {
+  console.warn(
+    "OTP_BYPASS_MODE=true is ignored because NODE_ENV is production"
+  );
 }
 
 export default {
@@ -100,6 +110,9 @@ export default {
     process.env.TWILIO_AUTH_TOKEN || optional.TWILIO_AUTH_TOKEN,
   TWILIO_SERVICE_SID:
     process.env.TWILIO_SERVICE_SID || optional.TWILIO_SERVICE_SID,
+
+  // Direct phone login. False whenever NODE_ENV is production.
+  OTP_BYPASS_MODE: resolveOtpBypassMode(),
 
   CORS_ORIGIN: process.env.CORS_ORIGIN || "",
 

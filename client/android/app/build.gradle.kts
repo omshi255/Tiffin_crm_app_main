@@ -21,7 +21,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tiffin.crm.tiffin_crm"
+        applicationId = "tiffin.crm.updated"
         minSdk = maxOf(21, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

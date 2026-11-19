@@ -1,6 +1,7 @@
 import Joi from "joi";
 import mongoose from "mongoose";
 import Zone from "../models/Zone.model.js";
+import Customer from "../models/Customer.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../class/apiResponseClass.js";
 import { ApiError } from "../class/apiErrorClass.js";
@@ -52,9 +53,28 @@ export const listZones = asyncHandler(async (req, res) => {
     Zone.countDocuments(filter),
   ]);
 
+  const zoneIds = data.map((z) => z._id);
+  const counts = zoneIds.length
+    ? await Customer.aggregate([
+        {
+          $match: {
+            ownerId: new mongoose.Types.ObjectId(ownerId),
+            isDeleted: { $ne: true },
+            zoneId: { $in: zoneIds },
+          },
+        },
+        { $group: { _id: "$zoneId", count: { $sum: 1 } } },
+      ])
+    : [];
+  const countByZone = new Map(counts.map((row) => [String(row._id), row.count]));
+  const withCounts = data.map((zone) => ({
+    ...zone,
+    customerCount: countByZone.get(String(zone._id)) || 0,
+  }));
+
   res.status(200).json(
     new ApiResponse(200, "Zones fetched", {
-      data,
+      data: withCounts,
       total,
       page,
       limit,
@@ -92,8 +112,19 @@ export const createZone = asyncHandler(async (req, res) => {
   const existing = await Zone.findOne({
     ownerId,
     name: value.name.trim(),
-  }).lean();
-  if (existing) throw new ApiError(409, "Zone with this name already exists");
+  });
+  if (existing && existing.isActive) {
+    throw new ApiError(409, "Zone with this name already exists");
+  }
+  if (existing && !existing.isActive) {
+    existing.description = value.description || "";
+    existing.color = value.color || existing.color || "";
+    existing.isActive = true;
+    await existing.save();
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Zone restored", existing.toObject()));
+  }
 
   const zone = await Zone.create({
     ownerId,
@@ -127,7 +158,9 @@ export const updateZone = asyncHandler(async (req, res) => {
       name: value.name.trim(),
       _id: { $ne: id },
     }).lean();
-    if (duplicate) throw new ApiError(409, "Another zone with this name exists");
+    if (duplicate?.isActive) {
+      throw new ApiError(409, "Another zone with this name exists");
+    }
     value.name = value.name.trim();
   }
 

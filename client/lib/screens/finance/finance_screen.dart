@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 
 import '../../core/socket/delivery_tracking_socket.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_list_pager.dart';
+import '../../l10n/app_lang.dart';
 import '../../core/widgets/bottom_sheet_handle.dart';
 import '../../features/expenses/data/expense_api.dart';
 import '../../features/expenses/screens/expenses_screen.dart';
@@ -95,22 +97,13 @@ class _FinanceScreenState extends State<FinanceScreen>
       _error = null;
     });
     try {
-      final summary = await FinanceService.fetchSummaryForMonth(_selectedMonth);
-      final daily = await FinanceService.fetchCalendarForMonth(_selectedMonth);
-
-      // Transactions should NOT block the whole Finance screen.
-      List<FinanceTransaction> txns = const [];
-      try {
-        txns = await FinanceService.fetchTransactionsForMonth(_selectedMonth);
-      } catch (_) {
-        txns = const [];
-      }
+      final monthData = await FinanceService.fetchMonth(_selectedMonth);
 
       if (!mounted) return;
       setState(() {
-        _summary = summary;
-        _calendarData = daily;
-        _transactions = txns;
+        _summary = monthData.summary;
+        _calendarData = monthData.daily;
+        _transactions = monthData.transactions;
         _isLoading = false;
       });
     } catch (e) {
@@ -527,9 +520,9 @@ class _FinanceScreenState extends State<FinanceScreen>
             indicator: const UnderlineTabIndicator(
               borderSide: BorderSide(color: AppColors.onPrimary, width: 3),
             ),
-            tabs: const [
-              Tab(text: 'Revenue'),
-              Tab(text: 'Transactions'),
+            tabs: [
+              Tab(text: tr('revenue')),
+              Tab(text: tr('transactions')),
             ],
           ),
         ),
@@ -628,6 +621,7 @@ class _RevenueTab extends StatefulWidget {
 
 class _RevenueTabState extends State<_RevenueTab> {
   bool _showTotal = false;
+  int _dayPage = 1;
 
   static final _money = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
 
@@ -689,7 +683,7 @@ class _RevenueTabState extends State<_RevenueTab> {
       children: [
         Expanded(
           child: pill(
-            'Today',
+            _showTotal ? 'Total' : _dayToggleLabel(),
             !_showTotal,
             () => setState(() => _showTotal = false),
           ),
@@ -707,12 +701,16 @@ class _RevenueTabState extends State<_RevenueTab> {
   }
 
   Widget _summaryRow(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(
+      widget.selectedDay.year,
+      widget.selectedDay.month,
+      widget.selectedDay.day,
+    );
+    final rows = _visibleRows();
 
     final stats = _showTotal
-        ? FinanceCalculator.calculateTotalStats(rows: widget.dailyRows)
-        : FinanceCalculator.calculateTodayStats(rows: widget.dailyRows, today: today);
+        ? FinanceCalculator.calculateTotalStats(rows: rows)
+        : FinanceCalculator.calculateTodayStats(rows: rows, today: day);
 
     final processedCount = stats.processedCount;
     final processedAmount = stats.processedAmount;
@@ -729,37 +727,37 @@ class _RevenueTabState extends State<_RevenueTab> {
 
     final cards = <Widget>[
       FinanceMiniCard(
-        title: 'Revenue',
+        title: tr('revenue'),
         value: _money.format(netRevenue),
         color: AppColors.primary,
       ),
       FinanceMiniCard(
-        title: 'Expenses',
+        title: tr('expenses'),
         value: _money.format(expenses),
         color: const Color(0xFFF97316), // orange
       ),
       FinanceMiniCard(
-        title: 'Income',
+        title: tr('income'),
         value: _money.format(incomes),
         color: AppColors.primaryAccent,
       ),
       FinanceMiniCard(
-        title: 'Profit',
+        title: tr('profit'),
         value: _money.format(profit),
         color: const Color(0xFF16A34A), // green
       ),
       FinanceMiniCard(
-        title: 'Refund',
+        title: tr('refund'),
         value: _money.format(refund),
         color: const Color(0xFFF59E0B), // yellow/amber
       ),
       FinanceMiniCard(
-        title: 'Deposit',
+        title: tr('deposit'),
         value: _money.format(deposit),
         color: AppColors.textSecondary,
       ),
       FinanceMiniCard(
-        title: 'Processed',
+        title: tr('processed'),
         value: processedLabel,
         color: AppColors.primary,
       ),
@@ -779,25 +777,30 @@ class _RevenueTabState extends State<_RevenueTab> {
 
   // Old large grid cards removed; we use FinanceMiniCard instead.
 
-  bool _isCurrentMonth() {
+  String _dayToggleLabel() {
     final now = DateTime.now();
-    return widget.selectedMonth.year == now.year && widget.selectedMonth.month == now.month;
+    final day = widget.selectedDay;
+    final isToday =
+        day.year == now.year && day.month == now.month && day.day == now.day;
+    if (isToday) return 'Today';
+    return DateFormat('d MMM', 'en').format(day);
+  }
+
+  List<DailyFinanceRow> _visibleRows() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isCurrentMonth = widget.selectedMonth.year == now.year &&
+        widget.selectedMonth.month == now.month;
+    final source = widget.chartRows;
+    if (!isCurrentMonth) return source;
+    return source.where((r) => !DateTime(r.date.year, r.date.month, r.date.day).isAfter(today)).toList();
   }
 
   Widget _dailyTableLikeScreenshot(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final now = DateTime.now();
-    final isCurrentMonth = _isCurrentMonth();
-    final today = DateTime(now.year, now.month, now.day);
-
-    // Use full month daily data so backend values always show here
-    // (chartRows may be locally date-range filtered).
-    final visible = [...widget.dailyRows]..sort((a, b) => b.date.compareTo(a.date));
-
-    // Never show future dates for the current month.
-    final filtered = isCurrentMonth
-        ? visible.where((r) => !r.date.isAfter(today)).toList()
-        : visible;
+    final visible = [..._visibleRows()]..sort((a, b) => b.date.compareTo(a.date));
+    final window = PageWindow.slice(visible, _dayPage, pageSize: 8);
+    final filtered = window.items;
 
     String processedText(DailyFinanceRow r) {
       if (r.processedCount > 0) {
@@ -898,7 +901,10 @@ class _RevenueTabState extends State<_RevenueTab> {
       );
     }
 
-    return Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
       decoration: BoxDecoration(
         color: isDark ? _D.surface : AppColors.surface,
         borderRadius: BorderRadius.circular(14),
@@ -928,19 +934,19 @@ class _RevenueTabState extends State<_RevenueTab> {
                 ),
                 child: Row(
                   children: [
-                    headerCell('Date', w: dateColW, align: TextAlign.left),
+                    headerCell(tr('date'), w: dateColW, align: TextAlign.left),
                     vSep(),
-                    headerCell('Processed', w: colW),
+                    headerCell(tr('processed'), w: colW),
                     vSep(),
-                    headerCell('Income', w: colW),
+                    headerCell(tr('income'), w: colW),
                     vSep(),
-                    headerCell('Deposit', w: colW),
+                    headerCell(tr('deposit'), w: colW),
                     vSep(),
-                    headerCell('Refund', w: colW),
+                    headerCell(tr('refund'), w: colW),
                     vSep(),
-                    headerCell('Expenses', w: colW),
+                    headerCell(tr('expenses'), w: colW),
                     vSep(),
-                    headerCell('Profit', w: colW),
+                    headerCell(tr('profit'), w: colW),
                   ],
                 ),
               ),
@@ -1018,6 +1024,14 @@ class _RevenueTabState extends State<_RevenueTab> {
           ),
         ),
       ),
+        ),
+        AppListPager(
+          page: window.page,
+          total: window.total,
+          pageSize: 8,
+          onPage: (p) => setState(() => _dayPage = p),
+        ),
+      ],
     );
   }
 }
@@ -1136,19 +1150,17 @@ class _TransactionsTab extends StatelessWidget {
                           ),
                         ],
                       )
-                    : ListView.separated(
+                    : PagedListView<FinanceTransaction>(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                        itemCount: transactions.length,
+                        items: transactions,
                         separatorBuilder: (context, index) =>
                             const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          final t = transactions[index];
+                        itemBuilder: (context, t, index) {
                           final isCredit = t.isCredit;
                           final titleColor =
                               isCredit ? AppColors.success : AppColors.error;
-                          final dateStr = DateFormat('MMM d, yyyy', 'en')
-                              .format(t.date.toLocal());
+                          final dateStr = DateFormat('MMM d, yyyy', 'en').format(t.date);
 
                           final title = t.title.isNotEmpty
                               ? t.title
@@ -1191,22 +1203,13 @@ class _TransactionsTab extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 10),
-                                IconButton(
-                                  onPressed: () {
-                                    // Edit flow not implemented in existing APIs here.
-                                    // Keeping icon to match requested UI.
-                                  },
-                                  icon: const Icon(Icons.edit_outlined, size: 20),
-                                  color: isDark ? _D.textSecondary : AppColors.textSecondary,
-                                  tooltip: 'Edit',
-                                ),
-                                IconButton(
-                                  onPressed: () => _confirmDelete(context, t),
-                                  icon: const Icon(Icons.delete_outline_rounded,
-                                      size: 22),
-                                  color: isDark ? _D.textSecondary : AppColors.textSecondary,
-                                  tooltip: 'Delete',
-                                ),
+                                if (t.deletable)
+                                  IconButton(
+                                    onPressed: () => _confirmDelete(context, t),
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 22),
+                                    color: isDark ? _D.textSecondary : AppColors.textSecondary,
+                                    tooltip: 'Delete',
+                                  ),
                               ],
                             ),
                           );
@@ -1321,10 +1324,12 @@ class _TransactionsTab extends StatelessWidget {
     );
     if (ok != true) return;
     try {
-      if (t.kind == FinanceTransactionKind.income) {
+      if (t.deleteAs == 'income' || t.kind == FinanceTransactionKind.income) {
         await IncomeApi.delete(t.id);
-      } else {
+      } else if (t.deleteAs == 'expense' || t.kind == FinanceTransactionKind.expense) {
         await ExpenseApi.delete(t.id);
+      } else {
+        return;
       }
       await onChanged();
     } catch (_) {

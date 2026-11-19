@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/auth/auth_session.dart';
 import '../../../../core/delivery/staff_location_sync.dart';
@@ -10,10 +12,12 @@ import '../../../../core/socket/delivery_tracking_socket.dart';
 import '../../../../core/utils/color_utils.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../core/utils/location_helper.dart';
 import '../../../../core/routing/nominatim_geocode_service.dart';
 import '../../../../core/utils/whatsapp_helper.dart';
 import '../../../../core/widgets/notification_bell_icon.dart';
+import '../../../../l10n/app_lang.dart';
 import '../../data/delivery_api.dart';
 import '../../../auth/data/auth_api.dart';
 import '../../../orders/data/order_api.dart';
@@ -32,33 +36,32 @@ class DeliveryDashboardScreen extends StatefulWidget {
 }
 
 class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
-  // ── Amber × Violet mixed palette ──────────────────────────────────────────
-  static const _violet900 = Color(0xFF1E0A4A);
-  static const _violet800 = Color(0xFF3B0FA0);
-  static const _violet700 = Color(0xFF5B21B6);
-  static const _violet600 = Color(0xFF7C3AED);
-  static const _violet500 = Color(0xFF8B5CF6);
+  // Vendor dashboard palette
+  static const _violet900 = Color(0xFF3B1578);
+  static const _violet800 = Color(0xFF6B35C8);
+  static const _violet700 = AppColors.primary;
+  static const _violet600 = AppColors.primary;
+  static const _violet500 = Color(0xFF9B6AF0);
   static const _violet200 = Color(0xFFDDD6FE);
   static const _violet100 = Color(0xFFEDE9FE);
   static const _violet50 = Color(0xFFF5F3FF);
 
-  static const _amber700 = Color(0xFFB45309);
+  static const _amber700 = Color(0xFF92400E);
   static const _amber600 = Color(0xFFD97706);
-  static const _amber400 = Color(0xFFFBBF24);
-  static const _amber100 = Color(0xFFFEF3C7);
+  static const _amber400 = Color(0xFFFCD34D);
+  static const _amber100 = Color(0xFFFFFBEB);
   static const _amber50 = Color(0xFFFFFBEB);
 
-  // Gradient hero: deep violet → amber glow
-  static const _gradStart = Color(0xFFD97706);
-  static const _gradMid = Color(0xFFF59E0B);
-  static const _gradEnd = Color(0xFFFBBF24);
+  static const _gradStart = AppColors.primary;
+  static const _gradMid = Color(0xFF6B35C8);
+  static const _gradEnd = Color(0xFF3B1578);
 
-  static const _bg = Color(0xFFFAF8FF);
+  static const _bg = Color(0xFFF8FAFC);
   static const _surface = Color(0xFFFFFFFF);
-  static const _border = Color(0xFFEDE9FE);
-  static const _divider = Color(0xFFF0EBFF);
-  static const _textPrimary = Color(0xFF1A0E45);
-  static const _textSecondary = Color(0xFF7C6DAB);
+  static const _border = Color(0xFFE2E8F0);
+  static const _divider = Color(0xFFF1F5F9);
+  static const _textPrimary = Color(0xFF1F1535);
+  static const _textSecondary = Color(0xFF6B7280);
 
   static const _success = Color(0xFF059669);
   static const _successSoft = Color(0xFFD1FAE5);
@@ -81,12 +84,12 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
     'out_for_delivery',
     'delivered',
   ];
-  static const List<String> _filterLabels = [
-    'All',
-    'Pending',
-    'Processing',
-    'Out for delivery',
-    'Delivered',
+  static const List<String> _filterKeys = [
+    'all',
+    'pending',
+    'processing',
+    'outForDelivery',
+    'delivered',
   ];
 
   @override
@@ -212,15 +215,15 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
                 ),
-                title: const Text(
-                  'Reject delivery',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                title: Text(
+                  tr('rejectDelivery'),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 content: TextField(
                   controller: controller,
                   decoration: InputDecoration(
-                    labelText: 'Reason (optional)',
-                    hintText: 'e.g. Too far, unavailable',
+                    labelText: tr('reasonOptional'),
+                    hintText: tr('reasonHint'),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -230,12 +233,12 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(c),
-                    child: const Text('Cancel'),
+                    child: Text(tr('cancel')),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.pop(c, controller.text.trim()),
                     style: FilledButton.styleFrom(backgroundColor: _danger),
-                    child: const Text('Reject'),
+                    child: Text(tr('reject')),
                   ),
                 ],
               );
@@ -290,17 +293,22 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredOrders;
-    final tabTitles = ['My Tasks', 'Map View', 'Profile'];
+    final tabTitles = [tr('myTasks'), tr('mapView'), tr('profile')];
+
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final pageBg = dark ? const Color(0xFF0E1020) : _bg;
+    final navBg = dark ? const Color(0xFF141625) : _surface;
+    final navLine = dark ? const Color(0xFF1E1B3A) : _border;
 
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: pageBg,
       appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
+        flexibleSpace: const DecoratedBox(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [_gradStart, _gradMid, _gradEnd],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
             ),
           ),
         ),
@@ -310,15 +318,22 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         automaticallyImplyLeading: false,
         title: Text(
           tabTitles[_selectedTab],
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
             color: Colors.white,
-            letterSpacing: 0.3,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.12),
           ),
         ),
         actions: [
           NotificationBellIcon(
+            iconColor: Colors.white,
             onPressed: () => context.push(AppRoutes.notifications),
           ),
           if (_selectedTab == 0) ...[
@@ -386,66 +401,12 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
             ),
           ],
         ],
-        bottom: _selectedTab == 0
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(52),
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_gradStart, _gradMid],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-                    child: Row(
-                      children: List.generate(_filterLabels.length, (i) {
-                        final selected = _statusFilter == _filterValues[i];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: GestureDetector(
-                            onTap: () => setState(
-                              () => _statusFilter = _filterValues[i],
-                            ),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: selected
-                                    ? _amber400
-                                    : Colors.white.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: selected
-                                      ? _amber600
-                                      : Colors.white.withOpacity(0.3),
-                                  width: selected ? 1.5 : 1,
-                                ),
-                              ),
-                              child: Text(
-                                _filterLabels[i],
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: selected ? _violet900 : Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                ),
-              )
-            : null,
       ),
-      body: IndexedStack(
+      body: Column(
+        children: [
+          if (_selectedTab == 0) _tasksToolbar(dark),
+          Expanded(
+            child: IndexedStack(
         index: _selectedTab,
         children: [
           RepaintBoundary(child: _buildTasksBody(filtered)),
@@ -460,17 +421,20 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
             child: DeliveryProfileScreen(),
           ),
         ],
+            ),
+          ),
+        ],
       ),
 
-      // ── Bottom nav ─────────────────────────────────────────────────────────
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: _surface,
-          border: Border(top: BorderSide(color: _border, width: 1)),
+          color: navBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border.all(color: navLine),
           boxShadow: [
             BoxShadow(
-              color: _violet900.withOpacity(0.08),
-              blurRadius: 20,
+              color: AppColors.primary.withValues(alpha: dark ? 0.16 : 0.08),
+              blurRadius: 16,
               offset: const Offset(0, -4),
             ),
           ],
@@ -484,7 +448,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 _NavTab(
                   icon: PhosphorIconsRegular.clipboardText,
                   iconFill: PhosphorIconsFill.clipboardText,
-                  label: 'Tasks',
+                  label: tr('tasks'),
                   selected: _selectedTab == 0,
                   badge: _orders
                       .where(
@@ -502,7 +466,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 _NavTab(
                   icon: PhosphorIconsRegular.mapTrifold,
                   iconFill: PhosphorIconsFill.mapTrifold,
-                  label: 'Map',
+                  label: tr('map'),
                   selected: _selectedTab == 1,
                   onTap: () {
                     HapticFeedback.lightImpact();
@@ -512,7 +476,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 _NavTab(
                   icon: PhosphorIconsRegular.user,
                   iconFill: PhosphorIconsFill.user,
-                  label: 'Profile',
+                  label: tr('profile'),
                   selected: _selectedTab == 2,
                   onTap: () {
                     HapticFeedback.lightImpact();
@@ -535,22 +499,98 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                   _selectedTab = 1;
                 });
               },
-              backgroundColor: _violet600,
+              backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              elevation: 6,
+              elevation: 4,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
               icon: const PhosphorIcon(
                 PhosphorIconsRegular.mapTrifold,
                 size: 18,
               ),
-              label: const Text(
-                'View on Map',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              label: Text(
+                tr('viewOnMap'),
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
             )
           : null,
+    );
+  }
+
+  int _countFor(String? status) {
+    if (status == null) return _orders.length;
+    if (status == 'pending') {
+      return _orders
+          .where((o) => o.status == 'pending' || o.status == 'assigned')
+          .length;
+    }
+    return _orders.where((o) => o.status == status).length;
+  }
+
+  Widget _tasksToolbar(bool dark) {
+    final bar = dark ? const Color(0xFF141625) : _surface;
+    final line = dark ? const Color(0xFF2F3347) : _border;
+    final muted = dark ? const Color(0xFF94A3B8) : _textSecondary;
+    return Container(
+      color: bar,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${_orders.length} ${tr('assignedToday')}',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: muted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(_filterKeys.length, (i) {
+                final selected = _statusFilter == _filterValues[i];
+                final count = _countFor(_filterValues[i]);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _statusFilter = _filterValues[i]);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primary
+                            : (dark ? const Color(0xFF1B1F2E) : _violet50),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected ? AppColors.primary : line,
+                        ),
+                      ),
+                      child: Text(
+                        '${tr(_filterKeys[i])}  $count',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: selected ? Colors.white : muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -564,7 +604,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
             CircularProgressIndicator(color: _violet600, strokeWidth: 2.5),
             const SizedBox(height: 12),
             Text(
-              'Loading deliveries…',
+              tr('loadingDeliveries'),
               style: TextStyle(color: _textSecondary, fontSize: 13),
             ),
           ],
@@ -604,9 +644,9 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        'No deliveries assigned',
-                        style: TextStyle(
+                      Text(
+                        tr('noDeliveries'),
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: _textPrimary,
@@ -614,7 +654,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Pull down to refresh',
+                        tr('pullToRefresh'),
                         style: TextStyle(fontSize: 13, color: _textSecondary),
                       ),
                     ],
@@ -622,17 +662,16 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 ),
               ],
             )
-          : ListView.builder(
-              cacheExtent: 480,
+          : PagedListView<OrderModel>(
               padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                MediaQuery.of(context).padding.bottom + 100,
+                0,
+                12,
+                0,
+                MediaQuery.of(context).padding.bottom + 88,
               ),
-              itemCount: filtered.length,
-              itemBuilder: (context, index) => RepaintBoundary(
-                    child: _buildOrderCard(filtered[index]),
+              items: filtered,
+              itemBuilder: (context, order, index) => RepaintBoundary(
+                    child: _buildOrderCard(order),
                   ),
             ),
     );
@@ -640,193 +679,167 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
 
   // ── Order card ────────────────────────────────────────────────────────────
   Widget _buildOrderCard(OrderModel order) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final card = dark ? const Color(0xFF1B1F2E) : _surface;
+    final line = dark ? const Color(0xFF2F3347) : _border;
+    final ink = dark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final muted = dark ? const Color(0xFF94A3B8) : _textSecondary;
     final name = order.customerName ?? order.customerId;
     final initials = _getInitials(name);
     final statusMeta = _statusMeta(order.status);
+    final slot = (order.slot?.trim().isNotEmpty == true)
+        ? order.slot!.trim()
+        : (order.mealTime?.trim().isNotEmpty == true ? order.mealTime!.trim() : '');
+    final zone = order.zoneName?.trim() ?? '';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          _showOrderSheet(order);
-        },
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Material(
+        color: card,
+        elevation: 0,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _border),
-            boxShadow: [
-              BoxShadow(
-                color: _violet900.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: IntrinsicHeight(
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            _showOrderSheet(order);
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: line),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: dark ? 0.08 : 0.05),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Left accent bar — gradient violet→amber
                 Container(
-                  width: 4,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [statusMeta.$1, _amber400],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                    borderRadius: const BorderRadius.horizontal(
-                      left: Radius.circular(16),
+                    color: dark ? const Color(0xFF2A2348) : _violet100,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    initials,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: dark ? const Color(0xFFC4B5FD) : AppColors.primary,
                     ),
                   ),
                 ),
-                // Content
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 13,
-                    ),
-                    child: Row(
-                      children: [
-                        // Avatar — violet/amber gradient bg
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [_violet100, _amber100],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(13),
-                            border: Border.all(color: _violet200),
-                          ),
-                          child: Center(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
                             child: Text(
-                              initials,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: _violet700,
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: ink,
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-
-                        // Info
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: _textPrimary,
-                                ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusMeta.$2,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              statusMeta.$3,
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: statusMeta.$1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (order.customerAddress != null &&
+                          order.customerAddress!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.location_on_outlined, size: 14, color: muted),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                order.customerAddress!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(fontSize: 12, color: muted),
                               ),
-                              if (order.customerAddress != null &&
-                                  order.customerAddress!.isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  order.customerAddress!,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: _textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                              const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _amber50,
-                                      borderRadius: BorderRadius.circular(5),
-                                      border: Border.all(
-                                        color: _amber400.withOpacity(0.4),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.access_time_rounded,
-                                          size: 10,
-                                          color: _amber700,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          order.slot ?? '—',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            color: _amber700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Status badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusMeta.$2,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: statusMeta.$1.withOpacity(0.3),
                             ),
-                          ),
-                          child: Text(
-                            statusMeta.$3,
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: statusMeta.$1,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
+                          ],
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                // Chevron
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: _textSecondary,
+                      if (slot.isNotEmpty || zone.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            if (slot.isNotEmpty)
+                              _metaChip(Icons.schedule_rounded, slot, dark),
+                            if (zone.isNotEmpty)
+                              _metaChip(Icons.alt_route_rounded, zone, dark),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _metaChip(IconData icon, String label, bool dark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: dark ? const Color(0xFF241B42) : _violet50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: dark ? const Color(0xFFC4B5FD) : AppColors.primary),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: dark ? const Color(0xFFDDD6FE) : const Color(0xFF5B35D5),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -881,10 +894,9 @@ class _NavTab extends StatelessWidget {
   final VoidCallback onTap;
   final int badge;
 
-  static const _violet600 = Color(0xFF7C3AED);
+  static const _violet600 = AppColors.primary;
   static const _violet100 = Color(0xFFEDE9FE);
-  static const _amber400 = Color(0xFFFBBF24);
-  static const _textSecondary = Color(0xFF7C6DAB);
+  static const _textSecondary = Color(0xFF9CA3AF);
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -905,12 +917,12 @@ class _NavTab extends StatelessWidget {
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: selected ? _violet100 : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                  // Amber bottom glow when selected
-                  border: selected
-                      ? Border(bottom: BorderSide(color: _amber400, width: 2))
-                      : null,
+                  color: selected
+                      ? (Theme.of(context).brightness == Brightness.dark
+                          ? AppColors.primary.withValues(alpha: 0.18)
+                          : _violet100)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: PhosphorIcon(
                   selected ? iconFill : icon,
@@ -948,9 +960,9 @@ class _NavTab extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               color: selected ? _violet600 : _textSecondary,
             ),
           ),
@@ -1016,10 +1028,14 @@ class _OrderActionSheet extends StatelessWidget {
         status != 'out_for_delivery';
     final canDeliver = status == 'in_transit' || status == 'out_for_delivery';
 
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final sheet = dark ? const Color(0xFF1B1F2E) : _surface;
+    final ink = dark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final muted = dark ? const Color(0xFF94A3B8) : _textSecondary;
     return Container(
-      decoration: const BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: sheet,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
         20,
@@ -1039,7 +1055,7 @@ class _OrderActionSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_violet600, _amber600]),
+                color: dark ? const Color(0xFF3F3A5C) : const Color(0xFFE2E8F0),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1050,13 +1066,11 @@ class _OrderActionSheet extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFF5F3FF), Color(0xFFFFFBEB)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: dark ? const Color(0xFF241B42) : _violet50,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _border),
+              border: Border.all(
+                color: dark ? const Color(0xFF3B2F66) : const Color(0xFFDDD6FE),
+              ),
             ),
             child: Row(
               children: [
@@ -1064,11 +1078,7 @@ class _OrderActionSheet extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_violet700, _amber600],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: AppColors.primary,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Center(
@@ -1089,18 +1099,18 @@ class _OrderActionSheet extends StatelessWidget {
                     children: [
                       Text(
                         order.customerName ?? order.customerId,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: _textPrimary,
+                          fontWeight: FontWeight.w700,
+                          color: ink,
                         ),
                       ),
                       if (order.customerAddress != null)
                         Text(
                           order.customerAddress!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: _textSecondary,
+                            color: muted,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1141,25 +1151,27 @@ class _OrderActionSheet extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: _amber50,
+                color: dark ? const Color(0xFF241B42) : _violet50,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _amber400.withOpacity(0.4)),
+                border: Border.all(
+                  color: dark ? const Color(0xFF3B2F66) : const Color(0xFFDDD6FE),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.access_time_rounded,
                     size: 14,
-                    color: _amber700,
+                    color: dark ? const Color(0xFFC4B5FD) : AppColors.primary,
                   ),
                   const SizedBox(width: 7),
                   Text(
-                    'Slot: ${order.slot}',
-                    style: const TextStyle(
+                    '${tr('slot')}: ${order.slot}',
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: _amber700,
+                      color: dark ? const Color(0xFFDDD6FE) : const Color(0xFF5B35D5),
                     ),
                   ),
                 ],
@@ -1177,7 +1189,7 @@ class _OrderActionSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: _SheetButton(
-                    label: 'Accept',
+                    label: tr('accept'),
                     icon: Icons.check_circle_outline_rounded,
                     bg: _successSoft,
                     fg: _success,
@@ -1188,7 +1200,7 @@ class _OrderActionSheet extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _SheetButton(
-                    label: 'Reject',
+                    label: tr('reject'),
                     icon: Icons.cancel_outlined,
                     bg: _dangerSoft,
                     fg: _danger,
@@ -1204,7 +1216,7 @@ class _OrderActionSheet extends StatelessWidget {
           // Start delivery
           if (canStart && !needsAcceptReject) ...[
             _SheetButton(
-              label: 'Start Delivery',
+              label: tr('startDelivery'),
               icon: Icons.delivery_dining_rounded,
               bg: _violet100,
               fg: _violet700,
@@ -1218,7 +1230,7 @@ class _OrderActionSheet extends StatelessWidget {
           // Mark delivered
           if (canDeliver) ...[
             _SheetButton(
-              label: 'Mark Delivered',
+              label: tr('markDelivered'),
               icon: Icons.task_alt_rounded,
               bg: _successSoft,
               fg: _success,
@@ -1234,7 +1246,7 @@ class _OrderActionSheet extends StatelessWidget {
             children: [
               Expanded(
                 child: _SheetButton(
-                  label: 'WhatsApp',
+                  label: tr('whatsapp'),
                   icon: Icons.chat_outlined,
                   bg: const Color(0xFFD1FAE5),
                   fg: const Color(0xFF065F46),
@@ -1245,7 +1257,7 @@ class _OrderActionSheet extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _SheetButton(
-                  label: 'Call',
+                  label: tr('call'),
                   icon: Icons.phone_outlined,
                   bg: _violet50,
                   fg: _violet600,
@@ -1256,11 +1268,11 @@ class _OrderActionSheet extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _SheetButton(
-                  label: 'Maps',
+                  label: tr('maps'),
                   icon: Icons.map_outlined,
-                  bg: _amber50,
-                  fg: _amber700,
-                  border: _amber600,
+                  bg: _violet100,
+                  fg: _violet700,
+                  border: _violet600,
                   onTap: onOpenMaps,
                 ),
               ),
@@ -1271,9 +1283,9 @@ class _OrderActionSheet extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(context),
             style: TextButton.styleFrom(foregroundColor: _textSecondary),
-            child: const Text(
-              'Close',
-              style: TextStyle(fontWeight: FontWeight.w600),
+            child: Text(
+              tr('close'),
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
         ],

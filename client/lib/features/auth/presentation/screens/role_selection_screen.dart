@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/widgets/language_picker.dart';
+import '../../../../l10n/app_lang.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/storefront_logo_icon.dart';
 
@@ -17,24 +19,24 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   static const _roles = [
     _RoleDef(
       key: 'customer',
-      title: 'Login as Customer',
-      subtitle: 'Track meals, holidays, and attendance',
+      title: 'loginCustomer',
+      subtitle: 'loginCustomerSub',
       lottiePath: 'assets/lottie/managecustomers.json',
       color: Color(0xFF1D9E75),
       bgColor: Color(0xFFE8F8F2),
     ),
     _RoleDef(
       key: 'vendor',
-      title: 'Login as Vendor',
-      subtitle: 'Manage your tiffin and mess business',
+      title: 'loginVendor',
+      subtitle: 'loginVendorSub',
       lottiePath: 'assets/lottie/prepare.json',
       color: Color(0xFF7B3FE4),
       bgColor: Color(0xFFEDE9FE),
     ),
     _RoleDef(
       key: 'delivery_staff',
-      title: 'Login as Delivery Boy',
-      subtitle: "View today's routes and mark deliveries",
+      title: 'loginDelivery',
+      subtitle: 'loginDeliverySub',
       lottiePath: 'assets/lottie/delivery.json',
       color: Color(0xFFBA7517),
       bgColor: Color(0xFFFEF5E7),
@@ -89,8 +91,16 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
               const SizedBox(height: 24),
 
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => showLanguagePicker(context),
+                  icon: const Icon(Icons.translate_rounded, size: 18),
+                  label: Text(tr('language')),
+                ),
+              ),
               Text(
-                'Choose login option',
+                tr('chooseLogin'),
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: AppColors.onSurface,
@@ -99,7 +109,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Select how you want to continue',
+                tr('selectContinue'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -179,7 +189,7 @@ class _RoleCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      role.title,
+                      tr(role.title),
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
@@ -188,7 +198,7 @@ class _RoleCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      role.subtitle,
+                      tr(role.subtitle),
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textSecondary,

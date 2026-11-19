@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../models/notification_model.dart';
 import '../../data/customer_portal_api.dart';
 import '../../../../core/notifications/notification_badge_service.dart';
+import '../../../../l10n/app_lang.dart';
 
 class CustomerNotificationsScreen extends StatefulWidget {
   const CustomerNotificationsScreen({super.key});
@@ -14,42 +17,45 @@ class CustomerNotificationsScreen extends StatefulWidget {
 
 class _CustomerNotificationsScreenState
     extends State<CustomerNotificationsScreen> {
-  // ── iMeals Green + Violet palette ─────────────────────────────────────────
-  static const _green900  = Color(0xFF064E3B);
-  static const _green700  = Color(0xFF065F46);
-  static const _green600  = Color(0xFF059669);
-  static const _green100  = Color(0xFFD1FAE5);
-  static const _green50   = Color(0xFFF0FDF4);
-  static const _violet600 = Color(0xFF5B35D5);
-  static const _violet100 = Color(0xFFEDE8FD);
-  // ignore: unused_field
-  static const _violet50  = Color(0xFFF5F2FF);
-  static const _bg        = Color(0xFFF9FFFE);
-  static const _surface   = Color(0xFFFFFFFF);
-  static const _border    = Color(0xFFD1FAE5);
-  // ignore: unused_field
-  static const _divider   = Color(0xFFE8FDF5);
-  static const _text1     = Color(0xFF111827);
-  static const _text2     = Color(0xFF6B7280);
-  // ignore: unused_field
-  static const _danger    = Color(0xFFD93025);
-  static const _warning   = Color(0xFFBA7517);
-  static const _warnSoft  = Color(0xFFFAEEDA);
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
+  Color get _green900 => _dark ? const Color(0xFFDDD6FE) : const Color(0xFF2D1B69);
+  Color get _green700 => _dark ? const Color(0xFF9B6AF0) : const Color(0xFF4C2DB8);
+  Color get _green600 => _dark ? const Color(0xFFB794F6) : const Color(0xFF5B35D5);
+  Color get _green100 => _dark ? const Color(0xFF2A2348) : const Color(0xFFEDE8FD);
+  Color get _green50 => _dark ? const Color(0xFF1E1B3A) : const Color(0xFFF5F2FF);
+  Color get _violet600 => _dark ? const Color(0xFFB794F6) : const Color(0xFF5B35D5);
+  Color get _violet100 => _dark ? const Color(0xFF2A2348) : const Color(0xFFEDE8FD);
+  Color get _bg => _dark ? const Color(0xFF0E1020) : const Color(0xFFF6F4FF);
+  Color get _surface => _dark ? const Color(0xFF141625) : const Color(0xFFFFFFFF);
+  Color get _border => _dark ? const Color(0xFF2F2A55) : const Color(0xFFE4DFF7);
+  Color get _text1 => _dark ? const Color(0xFFF8FAFC) : const Color(0xFF1A0E45);
+  Color get _text2 => _dark ? const Color(0xFF94A3B8) : const Color(0xFF7B6DAB);
+  Color get _warning => const Color(0xFFBA7517);
+  Color get _dangerBg => _dark ? const Color(0xFF2A1210) : const Color(0xFFFCEBEB);
+  Color get _dangerText => _dark ? const Color(0xFFF3B4B4) : const Color(0xFF8C2020);
+  Color get _dangerIcon => _dark ? const Color(0xFFF09595) : const Color(0xFFC0392B);
+  Color get _warnSoft => _dark ? const Color(0xFF2A2110) : const Color(0xFFFAEEDA);
 
   // ── State ──────────────────────────────────────────────────────────────────
   List<NotificationModel> _notifications = [];
   bool _loading = true;
+  int _page = 1;
+  int _total = 0;
 
   // ── API (unchanged) ────────────────────────────────────────────────────────
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final res = await CustomerPortalApi.getMyNotifications();
+      final res = await CustomerPortalApi.getMyNotifications(
+        page: _page,
+        limit: kListPageSize,
+      );
       if (mounted) {
         setState(() {
           final raw =
               (res['notifications'] as List<NotificationModel>?) ?? [];
           _notifications = _dedupeVendorAnnouncements(raw);
+          _total = (res['total'] as num?)?.toInt() ?? _notifications.length;
           _loading = false;
         });
       }
@@ -127,6 +133,18 @@ class _CustomerNotificationsScreenState
     _load();
   }
 
+  String? _leaveDateLabel(NotificationModel n) {
+    final raw = n.data?['leaveDate']?.toString();
+    if (raw == null || raw.length < 10) return null;
+    final parts = raw.substring(0, 10).split('-');
+    if (parts.length != 3) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return DateFormat('EEE, d MMM yyyy').format(DateTime(year, month, day));
+  }
+
   String _formatTime(DateTime t) {
     final now  = DateTime.now();
     final diff = now.difference(t);
@@ -157,8 +175,10 @@ class _CustomerNotificationsScreenState
           dotColor: _violet600, icon: Icons.check_circle_outline_rounded);
       case 'order_processing':
         return _NotifStyle(label: 'Preparing',
-          pillBg: const Color(0xFFFFF8E1), pillText: const Color(0xFF6B4C00),
-          iconBg: const Color(0xFFFFF8E1), iconColor: const Color(0xFFD4A017),
+          pillBg: _dark ? const Color(0xFF2A2110) : const Color(0xFFFFF8E1),
+          pillText: _dark ? const Color(0xFFF3D48A) : const Color(0xFF6B4C00),
+          iconBg: _dark ? const Color(0xFF2A2110) : const Color(0xFFFFF8E1),
+          iconColor: const Color(0xFFD4A017),
           dotColor: const Color(0xFFD4A017), icon: Icons.restaurant_outlined);
       case 'order_placed':
         return _NotifStyle(label: 'Order Placed',
@@ -172,14 +192,44 @@ class _CustomerNotificationsScreenState
           dotColor: _green600, icon: Icons.account_balance_wallet_outlined);
       case 'cancelled':
         return _NotifStyle(label: 'Cancelled',
-          pillBg: const Color(0xFFFCEBEB), pillText: const Color(0xFF8C2020),
-          iconBg: const Color(0xFFFCEBEB), iconColor: const Color(0xFFC0392B),
-          dotColor: const Color(0xFFC0392B), icon: Icons.cancel_outlined);
+          pillBg: _dangerBg, pillText: _dangerText,
+          iconBg: _dangerBg, iconColor: _dangerIcon,
+          dotColor: _dangerIcon, icon: Icons.cancel_outlined);
       case 'system': case 'alert':
         return _NotifStyle(label: 'Alert',
-          pillBg: const Color(0xFFFCEBEB), pillText: const Color(0xFF8C2020),
-          iconBg: const Color(0xFFFCEBEB), iconColor: const Color(0xFFC0392B),
-          dotColor: const Color(0xFFC0392B), icon: Icons.warning_amber_rounded);
+          pillBg: _dangerBg, pillText: _dangerText,
+          iconBg: _dangerBg, iconColor: _dangerIcon,
+          dotColor: _dangerIcon, icon: Icons.warning_amber_rounded);
+      case 'leave_approved':
+        return _NotifStyle(
+          label: 'Leave approved',
+          pillBg: _green100,
+          pillText: _green700,
+          iconBg: _green100,
+          iconColor: _green700,
+          dotColor: _green600,
+          icon: Icons.event_available_rounded,
+        );
+      case 'leave_rejected':
+        return _NotifStyle(
+          label: 'Leave rejected',
+          pillBg: _dangerBg,
+          pillText: _dangerText,
+          iconBg: _dangerBg,
+          iconColor: _dangerIcon,
+          dotColor: _dangerIcon,
+          icon: Icons.event_busy_rounded,
+        );
+      case 'vendor_holiday':
+        return _NotifStyle(
+          label: 'Vendor holiday',
+          pillBg: _violet100,
+          pillText: _violet600,
+          iconBg: _violet100,
+          iconColor: _violet600,
+          dotColor: _violet600,
+          icon: Icons.beach_access_rounded,
+        );
       case 'vendor_announcement':
         return _NotifStyle(
           label: 'Announcement',
@@ -228,16 +278,35 @@ class _CustomerNotificationsScreenState
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        backgroundColor: _green700,
+        flexibleSpace: const Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF7B3FE4),
+                    Color(0xFF6B35C8),
+                    Color(0xFF3B1578),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
               color: Colors.white, size: 20),
           onPressed: () => Navigator.of(context).pop()),
         title: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Notifications',
+          Text(tr('notifications'),
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700,
                 color: Colors.white, letterSpacing: 0.2)),
           if (unreadCount > 0) ...[
@@ -288,15 +357,15 @@ class _CustomerNotificationsScreenState
         width: 72, height: 72,
         decoration: BoxDecoration(
           color: _green100, borderRadius: BorderRadius.circular(20)),
-        child: const Icon(Icons.notifications_none_rounded,
+        child: Icon(Icons.notifications_none_rounded,
             size: 36, color: _green700))),
       const SizedBox(height: 16),
-      const Text('No notifications yet',
+      Text(tr('noNotifications'),
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
             color: _text1)),
       const SizedBox(height: 6),
-      const Text('Meal updates and alerts will appear here.',
+      Text(tr('mealUpdatesAppear'),
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 13, color: _text2)),
     ],
@@ -310,14 +379,24 @@ class _CustomerNotificationsScreenState
         top: 12,
         bottom: MediaQuery.of(context).padding.bottom + 24,
       ),
-      itemCount: groups.length,
+      itemCount: groups.length + (_total > kListPageSize ? 1 : 0),
       itemBuilder: (context, gi) {
+        if (gi >= groups.length) {
+          return AppListPager(
+            page: _page,
+            total: _total,
+            onPage: (p) {
+              setState(() => _page = p);
+              _load();
+            },
+          );
+        }
         final group = groups[gi];
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
             padding: const EdgeInsets.only(left: 46, top: 14, bottom: 6),
             child: Text(group.label.toUpperCase(),
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
                   color: _text2, letterSpacing: 1.0))),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -334,6 +413,7 @@ class _CustomerNotificationsScreenState
     final isRead     = n.read;
     final cleanTitle = _stripEmojis(n.title);
     final cleanBody  = _stripEmojis(n.body);
+    final dateLabel  = _leaveDateLabel(n);
 
     return IntrinsicHeight(
       child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -361,10 +441,10 @@ class _CustomerNotificationsScreenState
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
               decoration: BoxDecoration(
-                color: isRead ? const Color(0xFFF8FFFE) : _surface,
+                color: _surface,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: isRead ? _border : style.pillBg,
+                  color: isRead ? _border : style.dotColor.withValues(alpha: 0.55),
                   width: isRead ? 1.0 : 1.5),
                 boxShadow: [BoxShadow(
                   color: _green900.withValues(alpha: 0.04),
@@ -397,11 +477,18 @@ class _CustomerNotificationsScreenState
                     // Title
                     Text(cleanTitle, style: TextStyle(
                       fontSize: 13,
-                      fontWeight: isRead ? FontWeight.w400 : FontWeight.w600,
+                      fontWeight: isRead ? FontWeight.w600 : FontWeight.w700,
                       color: _text1)),
+                    if (dateLabel != null) ...[
+                      const SizedBox(height: 3),
+                      Text(dateLabel, style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _green700)),
+                    ],
                     const SizedBox(height: 3),
                     // Body
-                    Text(cleanBody, style: const TextStyle(
+                    Text(cleanBody, style: TextStyle(
                       fontSize: 12, color: _text2, height: 1.4)),
                   ])),
 
@@ -412,7 +499,7 @@ class _CustomerNotificationsScreenState
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(_formatTime(n.time),
-                      style: const TextStyle(fontSize: 10, color: _text2)),
+                      style: TextStyle(fontSize: 10, color: _text2)),
                     const SizedBox(height: 10),
                     GestureDetector(
                       onTap: () => _delete(n),

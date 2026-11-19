@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 // ignore: unused_import
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../models/notification_model.dart';
 import '../../data/notification_api.dart';
 import '../../../../core/notifications/notification_badge_service.dart';
+import '../../../../l10n/app_lang.dart';
 
 class _D {
   static const bg = Color(0xFF0E1020);
@@ -27,17 +29,23 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   List<NotificationModel> _notifications = [];
   bool _loading = true;
+  int _page = 1;
+  int _total = 0;
 
   // ─── ALL FUNCTIONALITY UNCHANGED ───────────────────────────────────────────
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final res = await NotificationApi.getMyNotifications();
+      final res = await NotificationApi.getMyNotifications(
+        page: _page,
+        limit: kListPageSize,
+      );
       if (mounted) {
         setState(() {
           _notifications =
               (res['notifications'] as List<NotificationModel>?) ?? [];
+          _total = (res['total'] as num?)?.toInt() ?? _notifications.length;
           _loading = false;
         });
       }
@@ -390,8 +398,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Notifications',
+            Text(
+              tr('notifications'),
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
@@ -473,7 +481,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         const SizedBox(height: 20),
         Text(
-          'No notifications yet',
+          tr('noNotifications'),
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 16,
@@ -483,7 +491,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Updates and alerts will appear here.',
+          tr('updatesAppearHere'),
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 13, color: isDark ? _D.textSecondary : const Color(0xFF888888)),
         ),
@@ -500,8 +508,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         top: 12,
         bottom: MediaQuery.of(context).padding.bottom + 24,
       ),
-      itemCount: groups.length,
+      itemCount: groups.length + (_total > kListPageSize ? 1 : 0),
       itemBuilder: (context, gi) {
+        if (gi >= groups.length) {
+          return AppListPager(
+            page: _page,
+            total: _total,
+            onPage: (p) {
+              setState(() => _page = p);
+              _load();
+            },
+          );
+        }
         final group = groups[gi];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

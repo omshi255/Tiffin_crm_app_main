@@ -9,6 +9,7 @@ class InvoiceModel {
     this.dueDate,
     this.shareToken,
     this.customerName,
+    this.invoiceNumber,
   });
 
   final String id;
@@ -20,6 +21,7 @@ class InvoiceModel {
   final DateTime? dueDate;
   final String? shareToken;
   final String? customerName;
+  final String? invoiceNumber;
 
   factory InvoiceModel.fromJson(Map<String, dynamic> json) {
     final id = json['_id']?.toString() ?? json['id']?.toString() ?? '';
@@ -61,6 +63,7 @@ class InvoiceModel {
       customerName: json['customerId'] is Map
           ? (json['customerId'] as Map)['name']?.toString()
           : null,
+      invoiceNumber: json['invoiceNumber']?.toString(),
     );
   }
 }

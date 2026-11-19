@@ -375,8 +375,8 @@ export const getMyNotifications = asyncHandler(async (req, res) => {
  * Mark a notification as read. Notification must belong to this customer.
  */
 export const markNotificationRead = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) throw new ApiError(403, "Customer profile not found");
 
   const { id } = req.params;
   const updated = await Notification.findOneAndUpdate(
@@ -397,8 +397,8 @@ export const markNotificationRead = asyncHandler(async (req, res) => {
  * Delete a single notification belonging to this customer.
  */
 export const deleteNotification = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) throw new ApiError(403, "Customer profile not found");
 
   const { id } = req.params;
   const deleted = await Notification.findOneAndDelete({
@@ -418,8 +418,8 @@ export const deleteNotification = asyncHandler(async (req, res) => {
  * Delete all read notifications for this customer.
  */
 export const clearReadNotifications = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) throw new ApiError(403, "Customer profile not found");
 
   const result = await Notification.deleteMany({
     customerId,
@@ -438,8 +438,8 @@ export const clearReadNotifications = asyncHandler(async (req, res) => {
  * Mark all notifications as read for this customer.
  */
 export const markAllNotificationsRead = asyncHandler(async (req, res) => {
-  const { customerId } = req.user;
-  if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+  const customerId = await resolveCustomerId(req);
+  if (!customerId) throw new ApiError(403, "Customer profile not found");
 
   await Notification.updateMany({ customerId }, { $set: { isRead: true } });
 

@@ -11,6 +11,8 @@ import '../../utils/customer_location_payload.dart';
 import '../widgets/contact_picker_bottom_sheet.dart';
 import '../widgets/contacts_permission_sheet.dart';
 import '../widgets/customer_location_pick_sheet.dart';
+import '../../../zones/data/zone_api.dart';
+import '../../../zones/models/zone_model.dart';
 import '../widgets/zone_autocomplete_field.dart';
 
 class AddEditCustomerScreen extends StatefulWidget {
@@ -34,6 +36,8 @@ class _AddEditCustomerScreenState extends State<AddEditCustomerScreen> {
   bool _isSaving = false;
   double? _mapLat;
   double? _mapLng;
+  List<ZoneModel> _zones = [];
+  String? _selectedZoneId;
 
   @override
   void initState() {
@@ -44,6 +48,8 @@ class _AddEditCustomerScreenState extends State<AddEditCustomerScreen> {
     _addressController = TextEditingController(text: c?.address ?? '');
     _areaController = TextEditingController(text: c?.area ?? '');
     _zoneController = TextEditingController(text: c?.zone ?? '');
+    _selectedZoneId = c?.zoneId;
+    _loadZones();
     final loc = c?.location;
     if (loc != null && (loc.lat != 0 || loc.lng != 0)) {
       _mapLat = loc.lat;
@@ -52,6 +58,14 @@ class _AddEditCustomerScreenState extends State<AddEditCustomerScreen> {
   }
 
   bool get _hasMapPin => hasValidCustomerMapPin(_mapLat, _mapLng);
+
+  Future<void> _loadZones() async {
+    try {
+      final zones = await ZoneApi.list(limit: 100, isActive: true);
+      if (!mounted) return;
+      setState(() => _zones = zones);
+    } catch (_) {}
+  }
 
   Future<void> _openLocationPicker() async {
     LatLng? initial;
@@ -123,6 +137,9 @@ class _AddEditCustomerScreenState extends State<AddEditCustomerScreen> {
         'whatsapp': phone,
         'area': _areaController.text.trim(),
         'zone': _zoneController.text.trim(),
+        'zoneId': (_selectedZoneId != null && _selectedZoneId!.isNotEmpty)
+            ? _selectedZoneId
+            : null,
         if (!widget._isEditMode) 'status': 'active',
       };
       if (_hasMapPin) {
@@ -234,6 +251,40 @@ class _AddEditCustomerScreenState extends State<AddEditCustomerScreen> {
                     textCapitalization: TextCapitalization.sentences,
                     validator: (_) => null,
                   ),
+                  DropdownButtonFormField<String>(
+                    value: _zones.any((z) => z.id == _selectedZoneId)
+                        ? _selectedZoneId
+                        : '',
+                    decoration: const InputDecoration(
+                      labelText: 'Delivery zone',
+                      prefixIcon: Icon(Icons.map_outlined),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('No delivery zone'),
+                      ),
+                      ..._zones.map(
+                        (zone) => DropdownMenuItem(
+                          value: zone.id,
+                          child: Text(zone.name),
+                        ),
+                      ),
+                    ],
+                    onChanged: (id) {
+                      setState(() {
+                        _selectedZoneId =
+                            (id == null || id.isEmpty) ? null : id;
+                        if (_selectedZoneId != null) {
+                          final zone = _zones.firstWhere(
+                            (item) => item.id == _selectedZoneId,
+                          );
+                          _zoneController.text = zone.name;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   ZoneAutocompleteField(
                     controller: _zoneController,
                     onPlaceSelected: (_, latLng) {

@@ -1,22 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_snackbar.dart';
 import '../../../../core/utils/error_handler.dart';
-import '../../../orders/data/order_api.dart';
 import '../../data/portal_announcement_api.dart';
 
-class _D {
-  static const bg = Color(0xFF0E1020);
-  static const surface = Color(0xFF1B1F2E);
-  static const border = Color(0xFF2F3347);
-  static const textPrimary = Color(0xFFF8FAFC);
-  static const textSecondary = Color(0xFF94A3B8);
-  static const violet100 = Color(0xFF241B42);
-}
-
-/// Vendor: view and edit the customer portal announcement.
+/// Vendor message shown at the top of the customer home screen.
 class PortalAnnouncementScreen extends StatefulWidget {
   const PortalAnnouncementScreen({super.key});
 
@@ -26,368 +15,27 @@ class PortalAnnouncementScreen extends StatefulWidget {
 }
 
 class _PortalAnnouncementScreenState extends State<PortalAnnouncementScreen> {
-  static final _dateFmt = DateFormat.yMMMd().add_jm();
+  static final _dateFmt = DateFormat('EEE, d MMM yyyy · h:mm a');
 
-  String _text = '';
+  final _controller = TextEditingController();
   DateTime? _updatedAt;
   bool _loading = true;
-  bool _loadFailed = false;
+  bool _saving = false;
+  String _savedText = '';
+
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
+  Color get _bg => _dark ? const Color(0xFF0E1020) : const Color(0xFFF6F4FF);
+  Color get _surface => _dark ? const Color(0xFF141625) : Colors.white;
+  Color get _border => _dark ? const Color(0xFF2F2A55) : const Color(0xFFE4DFF7);
+  Color get _text1 => _dark ? const Color(0xFFF8FAFC) : const Color(0xFF1A0E45);
+  Color get _text2 => _dark ? const Color(0xFF94A3B8) : const Color(0xFF6E628F);
+  Color get _accent => _dark ? const Color(0xFFB794F6) : const Color(0xFF4C2DB8);
+  Color get _solid => const Color(0xFF5B35D5);
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _loadFailed = false;
-    });
-    try {
-      final dto = await PortalAnnouncementApi.get();
-      if (!mounted) return;
-      setState(() {
-        _text = dto.text;
-        _updatedAt = dto.updatedAt;
-        _loading = false;
-        _loadFailed = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _loadFailed = true;
-      });
-      ErrorHandler.show(context, e);
-    }
-  }
-
-  /// Opens editor: empty for first message, or pre-filled so saving does not wipe the prior text.
-  Future<void> _openAnnouncementEditor() async {
-    final hasText = _text.trim().isNotEmpty;
-    await _openEditor(initialText: hasText ? _text : '');
-  }
-
-  String _ymd(DateTime d) {
-    final y = d.year;
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$day';
-  }
-
-  Future<void> _openHolidayCancelDeliveries() async {
-    var picked = DateTime(
-      DateTime.now().year,
-      DateTime.now().month,
-      DateTime.now().day,
-    );
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Cancel deliveries'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'This cancels all orders for the selected day that are not yet delivered. '
-                'Wallet and subscription balances are charged when an order moves to processing. '
-                'Cancelling pending orders before processing does not deduct that day\'s meal balance.',
-                style: TextStyle(fontSize: 13, height: 1.35),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Date'),
-                subtitle: Text(_dateFmt.format(picked)),
-                trailing: const Icon(Icons.calendar_today_rounded),
-                onTap: () async {
-                  final d = await showDatePicker(
-                    context: ctx,
-                    initialDate: picked,
-                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (d != null) {
-                    setLocal(() {
-                      picked = DateTime(d.year, d.month, d.day);
-                    });
-                  }
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Back'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.error,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Cancel deliveries'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || !mounted) return;
-
-    try {
-      final count = await OrderApi.cancelVendorHoliday(date: _ymd(picked));
-      if (!mounted) return;
-      AppSnackbar.success(
-        context,
-        count == 0
-            ? 'No active orders to cancel for that day.'
-            : 'Cancelled $count delivery order(s).',
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ErrorHandler.show(context, e);
-    }
-  }
-
-  Future<void> _openEditor({required String initialText}) async {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: isDark ? _D.surface : AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => _EditAnnouncementSheet(
-        initialText: initialText,
-        onSaved: (dto) {
-          if (!mounted) return;
-          setState(() {
-            _text = dto.text;
-            _updatedAt = dto.updatedAt;
-          });
-          AppSnackbar.success(
-            context,
-            'Saved. ${dto.notifiedCount} customers notified.',
-          );
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: isDark ? _D.bg : AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
-        title: const Text('Portal Announcement'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.maybePop(context),
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _loadFailed
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _load,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Retry'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-          : RefreshIndicator(
-              color: isDark ? AppColors.primaryLight : AppColors.primaryAccent,
-              onRefresh: _load,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: isDark ? _D.surface : AppColors.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: isDark ? _D.border : AppColors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: isDark ? _D.violet100 : AppColors.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.campaign_rounded,
-                                  color: isDark ? AppColors.primaryLight : AppColors.primaryAccent,
-                                  size: 22,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Current announcement',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? _D.textSecondary : AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            _text.trim().isEmpty
-                                ? 'No announcement set'
-                                : _text,
-                            style: TextStyle(
-                              fontSize: 15,
-                              height: 1.45,
-                              color: _text.trim().isEmpty
-                                  ? (isDark ? _D.textSecondary.withValues(alpha: 0.6) : AppColors.textHint)
-                                  : (isDark ? _D.textPrimary : AppColors.textPrimary),
-                              fontStyle: _text.trim().isEmpty
-                                  ? FontStyle.italic
-                                  : FontStyle.normal,
-                            ),
-                          ),
-                          if (_updatedAt != null) ...[
-                            const SizedBox(height: 16),
-                            Text(
-                              'Last updated: ${_dateFmt.format(_updatedAt!.toLocal())}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? _D.textSecondary : AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 10),
-                          Text(
-                            'Only one announcement is stored. Use Edit to change it; saving always replaces the previous message.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              height: 1.35,
-                              color: isDark ? _D.textSecondary : AppColors.textSecondary.withValues(alpha: 0.95),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _openAnnouncementEditor,
-                                  icon: Icon(
-                                    _text.trim().isEmpty
-                                        ? Icons.add_rounded
-                                        : Icons.edit_rounded,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    _text.trim().isEmpty ? 'Add' : 'Edit',
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: isDark ? AppColors.primaryLight : AppColors.primary,
-                                    side: BorderSide(color: isDark ? _D.border : AppColors.border),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _openHolidayCancelDeliveries,
-                            icon: const Icon(Icons.event_busy_rounded, size: 18),
-                            label: const Text('Cancel all deliveries (no charge)'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.error,
-                              side: const BorderSide(color: AppColors.error),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Cancels undelivered orders for the day you pick. Already-delivered orders stay as-is. '
-                            'Meal balance is charged when your order is processed. Cancelling before processing is not charged.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              height: 1.35,
-                              color: isDark ? _D.textSecondary : AppColors.textSecondary.withValues(alpha: 0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-    );
-  }
-}
-
-class _EditAnnouncementSheet extends StatefulWidget {
-  const _EditAnnouncementSheet({
-    required this.initialText,
-    required this.onSaved,
-  });
-
-  final String initialText;
-  final void Function(PortalAnnouncementSaveDto dto) onSaved;
-
-  @override
-  State<_EditAnnouncementSheet> createState() => _EditAnnouncementSheetState();
-}
-
-class _EditAnnouncementSheetState extends State<_EditAnnouncementSheet> {
-  late final TextEditingController _controller;
-  bool _notifyAll = false;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialText);
   }
 
   @override
@@ -396,16 +44,48 @@ class _EditAnnouncementSheetState extends State<_EditAnnouncementSheet> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final dto = await PortalAnnouncementApi.get();
+      if (!mounted) return;
+      setState(() {
+        _savedText = dto.text;
+        _controller.text = dto.text;
+        _updatedAt = dto.updatedAt;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ErrorHandler.show(context, e);
+    }
+  }
+
+  Future<void> _save({required bool clear}) async {
+    final text = clear ? '' : _controller.text.trim();
+    if (!clear && text.isEmpty) {
+      AppSnackbar.info(context, 'Write the announcement first.');
+      return;
+    }
     setState(() => _saving = true);
     try {
       final dto = await PortalAnnouncementApi.put(
-        text: _controller.text,
-        notifyAllCustomers: _notifyAll,
+        text: text,
+        notifyAllCustomers: text.isNotEmpty,
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
-      widget.onSaved(dto);
+      setState(() {
+        _savedText = dto.text;
+        _controller.text = dto.text;
+        _updatedAt = dto.updatedAt;
+      });
+      AppSnackbar.success(
+        context,
+        text.isEmpty
+            ? 'Announcement removed from the customer home screen.'
+            : 'Announcement is now on your customers\' home screen.',
+      );
     } catch (e) {
       if (!mounted) return;
       ErrorHandler.show(context, e);
@@ -416,105 +96,147 @@ class _EditAnnouncementSheetState extends State<_EditAnnouncementSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    final isAdd = widget.initialText.trim().isEmpty;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isDark ? _D.border : AppColors.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        flexibleSpace: const Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF7B3FE4),
+                    Color(0xFF6B35C8),
+                    Color(0xFF3B1578),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                isAdd ? 'Make announcement' : 'Edit announcement',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? _D.textPrimary : AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _controller,
-                maxLines: 8,
-                maxLength: 5000,
-                style: TextStyle(color: isDark ? _D.textPrimary : null),
-                decoration: InputDecoration(
-                  hintText: 'Announcement text…',
-                  hintStyle: TextStyle(color: isDark ? _D.textSecondary.withValues(alpha: 0.6) : null),
-                  filled: true,
-                  fillColor: isDark ? _D.bg : AppColors.surfaceContainerLow,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: isDark ? _D.border : AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: isDark ? _D.border : AppColors.border),
-                  ),
-                ),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Notify all customers',
-                  style: TextStyle(color: isDark ? _D.textPrimary : null),
-                ),
-                value: _notifyAll,
-                activeThumbColor: isDark ? AppColors.primaryLight : AppColors.primaryAccent,
-                inactiveThumbColor: isDark ? _D.textSecondary : AppColors.textHint,
-                inactiveTrackColor: isDark ? _D.bg : AppColors.surfaceContainerLow,
-                trackOutlineColor: WidgetStateProperty.resolveWith(
-                  (states) =>
-                      states.contains(WidgetState.selected)
-                          ? (isDark ? AppColors.primaryLight : AppColors.primaryAccent)
-                          : (isDark ? _D.border : AppColors.border),
-                ),
-                onChanged: _saving
-                    ? null
-                    : (v) => setState(() => _notifyAll = v),
-              ),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _saving
-                    ? const SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.onPrimary,
-                        ),
-                      )
-                    : const Text('Save'),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Customer announcement'),
       ),
+      body: _loading
+          ? Center(child: CircularProgressIndicator(color: _solid))
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(Icons.campaign_rounded, color: _accent),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Shows on the customer home screen',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: _text1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Use this for a short update, for example “Raita and papad are free today.” Holidays and cancelled meals stay in Leave Requests.',
+                        style: TextStyle(fontSize: 13, height: 1.4, color: _text2),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _controller,
+                        maxLines: 5,
+                        maxLength: 280,
+                        style: TextStyle(color: _text1, fontSize: 15, height: 1.4),
+                        decoration: InputDecoration(
+                          hintText: 'Raita and papad are free today',
+                          hintStyle: TextStyle(color: _text2),
+                          filled: true,
+                          fillColor: _dark
+                              ? const Color(0xFF1E1B3A)
+                              : const Color(0xFFF6F4FF),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: _border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: _border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: _accent, width: 1.4),
+                          ),
+                        ),
+                      ),
+                      if (_updatedAt != null && _savedText.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Live since ${_dateFmt.format(_updatedAt!.toLocal())}',
+                          style: TextStyle(fontSize: 12, color: _text2),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _saving ? null : () => _save(clear: false),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _solid,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _saving
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Post to customers'),
+                      ),
+                      if (_savedText.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _saving ? null : () => _save(clear: true),
+                          child: Text(
+                            'Remove announcement',
+                            style: TextStyle(color: _text2),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }

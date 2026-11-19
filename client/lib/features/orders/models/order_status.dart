@@ -1,3 +1,5 @@
+import '../../../l10n/app_lang.dart';
+
 /// Daily order lifecycle — values must match backend `DailyOrder.status` strings.
 enum OrderStatus {
   pending,
@@ -26,15 +28,15 @@ enum OrderStatus {
   String get label {
     switch (this) {
       case OrderStatus.pending:
-        return 'Pending';
+        return tr('pending');
       case OrderStatus.processing:
-        return 'Processing';
+        return tr('processing');
       case OrderStatus.outForDelivery:
-        return 'Out for delivery';
+        return tr('outForDelivery');
       case OrderStatus.delivered:
-        return 'Delivered';
+        return tr('delivered');
       case OrderStatus.cancelled:
-        return 'Cancelled';
+        return tr('cancelled');
     }
   }
 

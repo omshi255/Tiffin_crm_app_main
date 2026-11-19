@@ -33,6 +33,7 @@ router.use("/vendor/customers", vendorCustomerTiffinRoutes);
 router.use("/vendor/dashboard", vendorDashboardRoutes);
 router.use("/vendor/finance", vendorFinanceRoutes);
 router.use("/customer", customerPortalRoutes);   // customer self-service portal
+router.use("/customer-portal", customerPortalRoutes);
 router.use("/items", itemRoutes);
 router.use("/delivery-staff", deliveryStaffRoutes);
 router.use("/plans", planRoutes);

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import config from "../config/index.js";
+import { installStandaloneTransactionFallback } from "../utils/mongoSession.js";
 
 const connectMongoDB = async () => {
   try {
@@ -10,6 +11,7 @@ const connectMongoDB = async () => {
     });
 
     console.log(`MongoDB connected => ${conn.connection.host}`);
+    await installStandaloneTransactionFallback();
   } catch (error) {
     console.error(`MongoDB connection error: ${error.message}`);
 
@@ -19,7 +21,9 @@ const connectMongoDB = async () => {
       config.MONGODB_URL !== localUrl &&
       (error.message.includes("ENOTFOUND") ||
         error.message.includes("ECONNREFUSED") ||
-        error.message.includes("selection timed out"))
+        error.message.includes("selection timed out") ||
+        error.message.includes("whitelist") ||
+        error.message.includes("Could not connect"))
     ) {
       console.warn("⚠️ Attempting fallback connection to local MongoDB server...");
       try {
@@ -29,6 +33,7 @@ const connectMongoDB = async () => {
           serverSelectionTimeoutMS: 5000,
         });
         console.log(`✅ Connected to Local MongoDB => ${localConn.connection.host}`);
+        await installStandaloneTransactionFallback();
         return;
       } catch (localErr) {
         console.error(`Local MongoDB fallback error: ${localErr.message}`);

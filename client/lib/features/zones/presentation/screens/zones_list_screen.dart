@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/error_handler.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../data/zone_api.dart';
 import '../../models/zone_model.dart';
@@ -260,15 +261,15 @@ class _ZonesListScreenState extends State<ZonesListScreen> {
   }
 
   // ── List ──────────────────────────────────────────────────────────────────
-  Widget _buildList() => ListView.builder(
+  Widget _buildList() => PagedListView<ZoneModel>(
     padding: EdgeInsets.fromLTRB(
       16,
       16,
       16,
       MediaQuery.of(context).padding.bottom + 100,
     ),
-    itemCount: _zones.length,
-    itemBuilder: (context, i) => _buildZoneCard(_zones[i]),
+    items: _zones,
+    itemBuilder: (context, zone, i) => _buildZoneCard(zone),
   );
 
   // ── Zone card ─────────────────────────────────────────────────────────────
@@ -358,6 +359,17 @@ class _ZonesListScreenState extends State<ZonesListScreen> {
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                z.customerCount == 1
+                                    ? '1 customer'
+                                    : '${z.customerCount} customers',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? _D.textSecondary : _textSecondary,
+                                ),
                               ),
                               if (z.description.isNotEmpty) ...[
                                 const SizedBox(height: 2),

@@ -356,6 +356,7 @@ import '../../../../core/utils/error_handler.dart';
 import '../../data/auth_api.dart';
 import '../../models/user_model.dart';
 import '../../../../services/notification_service.dart';
+import '../../../../l10n/app_lang.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.selectedRole = 'vendor'});
@@ -408,8 +409,22 @@ class _LoginScreenState extends State<LoginScreen> {
     if (phone.length != 10) return;
     setState(() => _isLoading = true);
     try {
-      await AuthApi.sendOtp(phone);
+      final session = await AuthApi.sendOtp(
+        phone,
+        role: widget.selectedRole,
+      );
       if (!mounted) return;
+      if (session != null) {
+        await SecureStorage.saveAccessToken(session.accessToken);
+        await SecureStorage.saveRefreshToken(session.refreshToken);
+        await SecureStorage.saveUserRole(session.user.role);
+        await SecureStorage.saveUserId(session.user.id);
+        await NotificationBadgeService.refreshNow();
+        await _updateFcmToken();
+        if (!mounted) return;
+        await _navigateAfterLogin(context, session.user);
+        return;
+      }
       context.push(
         AppRoutes.otp,
         extra: <String, String>{
@@ -424,14 +439,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ignore: unused_element
   Future<void> _updateFcmToken() async {
     try {
       await NotificationService().registerTokenAfterLogin();
     } catch (_) {}
   }
 
-  // ignore: unused_element
   Future<void> _navigateAfterLogin(BuildContext context, UserModel user) async {
     final role = user.role;
     if (role == 'vendor') {
@@ -674,7 +687,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Verify your identity',
+                        tr('verifyIdentity'),
                         style: theme.textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF1A0A2E),
@@ -683,7 +696,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Enter your registered mobile number to receive OTP',
+                        tr('enterMobile'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: const Color(0xFF8B7BAE),
                           height: 1.5,
@@ -692,8 +705,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 24),
 
                       // Label
-                      const Text(
-                        'MOBILE NUMBER',
+                      Text(
+                        tr('mobileNumber').toUpperCase(),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -830,7 +843,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     )
                                   : Row(
                                       mainAxisSize: MainAxisSize.min,
-                                      children: const [
+                                      children: [
                                         Icon(
                                           Icons.send_rounded,
                                           color: Colors.white,
@@ -838,7 +851,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ),
                                         SizedBox(width: 8),
                                         Text(
-                                          'Send OTP',
+                                          tr('continueBtn'),
                                           style: TextStyle(
                                             color: Colors.white,
                                             fontSize: 15,

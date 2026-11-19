@@ -4,6 +4,7 @@ class ZoneModel {
   final String description;
   final String color;
   final bool isActive;
+  final int customerCount;
 
   ZoneModel({
     required this.id,
@@ -11,6 +12,7 @@ class ZoneModel {
     this.description = '',
     this.color = '',
     this.isActive = true,
+    this.customerCount = 0,
   });
 
   factory ZoneModel.fromJson(Map<String, dynamic> json) {
@@ -20,6 +22,9 @@ class ZoneModel {
       description: (json['description'] ?? '').toString(),
       color: (json['color'] ?? '').toString(),
       isActive: json['isActive'] == null ? true : json['isActive'] == true,
+      customerCount: json['customerCount'] is num
+          ? (json['customerCount'] as num).toInt()
+          : int.tryParse('${json['customerCount']}') ?? 0,
     );
   }
 

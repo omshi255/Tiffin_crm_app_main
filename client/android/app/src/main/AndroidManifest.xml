@@ -18,6 +18,7 @@
         android:label="tiffin_crm"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
         <!-- FCM: default channel must match Flutter + server [tiffin_crm_channel] -->
         <meta-data

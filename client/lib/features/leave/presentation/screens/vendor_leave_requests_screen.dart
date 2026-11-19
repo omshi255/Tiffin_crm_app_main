@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/utils/error_handler.dart';
 import '../../../../core/utils/app_snackbar.dart';
+import '../../../../core/widgets/app_list_pager.dart';
 import '../../data/leave_api.dart';
 import '../../models/leave_request_model.dart';
 
@@ -110,6 +111,7 @@ class _VendorLeaveRequestsScreenState extends State<VendorLeaveRequestsScreen>
   }
 
   Future<void> _handleApprove(LeaveRequestModel leave) async {
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       await LeaveApi.updateLeaveStatus(leaveId: leave.id, status: 'approved');
@@ -242,11 +244,10 @@ class _VendorLeaveRequestsScreenState extends State<VendorLeaveRequestsScreen>
 
     return RefreshIndicator(
       onRefresh: _loadDataForCurrentTab,
-      child: ListView.builder(
+      child: PagedListView<LeaveRequestModel>(
         padding: const EdgeInsets.all(16),
-        itemCount: _customerRequests.length,
-        itemBuilder: (context, index) {
-          final leave = _customerRequests[index];
+        items: _customerRequests,
+        itemBuilder: (context, leave, index) {
           final dateStr = DateFormat('EEEE, d MMM yyyy').format(leave.date);
 
           return Card(
@@ -372,11 +373,10 @@ class _VendorLeaveRequestsScreenState extends State<VendorLeaveRequestsScreen>
 
     return RefreshIndicator(
       onRefresh: _loadDataForCurrentTab,
-      child: ListView.builder(
+      child: PagedListView<LeaveRequestModel>(
         padding: const EdgeInsets.all(16),
-        itemCount: _vendorLeaves.length,
-        itemBuilder: (context, index) {
-          final leave = _vendorLeaves[index];
+        items: _vendorLeaves,
+        itemBuilder: (context, leave, index) {
           final dateStr = DateFormat('EEEE, d MMM yyyy').format(leave.date);
 
           return Card(
@@ -463,11 +463,10 @@ class _VendorLeaveRequestsScreenState extends State<VendorLeaveRequestsScreen>
 
     return RefreshIndicator(
       onRefresh: _loadDataForCurrentTab,
-      child: ListView.builder(
+      child: PagedListView<LeaveRequestModel>(
         padding: const EdgeInsets.all(16),
-        itemCount: _historyLeaves.length,
-        itemBuilder: (context, index) {
-          final leave = _historyLeaves[index];
+        items: _historyLeaves,
+        itemBuilder: (context, leave, index) {
           final dateStr = DateFormat('EEEE, d MMM yyyy').format(leave.date);
           final requesterStr = leave.requestedBy == 'Vendor' ? 'Vendor Holiday' : (leave.customerName ?? 'Customer');
 
@@ -654,14 +653,14 @@ class _VendorLeaveFormState extends State<_VendorLeaveForm> {
 
     setState(() => _submitting = true);
     try {
-      await LeaveApi.requestVendorLeave(
+      final message = await LeaveApi.requestVendorLeave(
         leaveDate: _selectedDate!,
         mealType: _selectedMeal,
         reason: _reasonController.text.trim(),
         notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
       );
       if (mounted) {
-        AppSnackbar.success(context, 'Vendor holiday declared successfully');
+        AppSnackbar.success(context, message);
         widget.onSuccess();
         Navigator.pop(context);
       }

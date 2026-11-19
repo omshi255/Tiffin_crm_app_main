@@ -1,14 +1,31 @@
 import Joi from "joi";
-import mongoose from "mongoose";
 import LeaveRequest from "../models/LeaveRequest.model.js";
 import Subscription from "../models/Subscription.model.js";
 import Customer from "../models/Customer.model.js";
-import DailyOrder from "../models/DailyOrder.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../class/apiResponseClass.js";
 import { ApiError } from "../class/apiErrorClass.js";
-import { isCutoffExceeded } from "../utils/leaveValidation.js";
+import { cutoffRejectionMessage } from "../utils/leaveValidation.js";
 import { sendNotification } from "../services/inAppNotification.service.js";
+import Notification from "../models/Notification.model.js";
+import {
+  mealsOverlap,
+  waiveOrdersForApprovedLeave,
+} from "../services/leaveBilling.service.js";
+import { parseUTC } from "../services/dailyOrder.service.js";
+
+async function customerIdFromRequest(req) {
+  let customerId = req.user?.customerId;
+  if (!customerId && req.user?.phone) {
+    const normalized = String(req.user.phone).replace(/\D/g, "").slice(-10);
+    const cust = await Customer.findOne({
+      phone: new RegExp(normalized + "$"),
+      isDeleted: { $ne: true },
+    }).select("_id");
+    if (cust) customerId = cust._id.toString();
+  }
+  return customerId || null;
+}
 
 /**
  * POST /api/v1/leave/request
@@ -48,6 +65,7 @@ export const requestLeave = asyncHandler(async (req, res) => {
     mealType: Joi.string().valid("breakfast", "lunch", "dinner", "both", "all").default("all"),
     reason: Joi.string().trim().allow("").optional(),
     notes: Joi.string().trim().allow("").optional(),
+    timezoneOffsetMinutes: Joi.number().integer().min(-720).max(840).optional(),
   });
 
   const { error, value } = schema.validate(req.body, { stripUnknown: true });
@@ -56,22 +74,18 @@ export const requestLeave = asyncHandler(async (req, res) => {
   }
 
   const { leaveDate, mealType, reason, notes } = value;
+  const timezoneOffsetMinutes = Number.isFinite(Number(value.timezoneOffsetMinutes))
+    ? Number(value.timezoneOffsetMinutes)
+    : 330;
 
-  const startOfDay = new Date(leaveDate);
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  if (startOfDay < todayStart) {
-    throw new ApiError(400, "Cannot request leave for a past date");
+  const closedMessage = cutoffRejectionMessage(leaveDate, mealType, timezoneOffsetMinutes);
+  if (closedMessage) {
+    throw new ApiError(400, closedMessage);
   }
 
-  if (isCutoffExceeded(leaveDate, mealType)) {
-    throw new ApiError(400, "Leave request is closed because meal preparation has already started.");
-  }
-
-  const endOfDay = new Date(leaveDate);
-  endOfDay.setHours(23, 59, 59, 999);
+  const startOfDay = parseUTC(leaveDate);
+  const endOfDay = new Date(startOfDay);
+  endOfDay.setUTCHours(23, 59, 59, 999);
 
   // Find active subscription covering this date
   let sub = await Subscription.findOne({
@@ -100,14 +114,15 @@ export const requestLeave = asyncHandler(async (req, res) => {
     throw new ApiError(400, "No active subscription found for your account. Please ask your vendor to activate your subscription.");
   }
 
-  // Check if a leave request already exists for this date and subscription
-  const existing = await LeaveRequest.findOne({
+  const existingRows = await LeaveRequest.find({
     subscriptionId: sub._id,
     leaveDate: { $gte: startOfDay, $lte: endOfDay },
+    status: { $in: ["Pending", "Approved"] },
   });
+  const existing = existingRows.find((row) => mealsOverlap(row.mealType, mealType));
 
   if (existing) {
-    throw new ApiError(400, `A leave request already exists for this date in status: ${existing.status}`);
+    throw new ApiError(400, `A ${existing.status.toLowerCase()} leave request already exists for this meal.`);
   }
 
   const leaveRequest = await LeaveRequest.create({
@@ -120,6 +135,7 @@ export const requestLeave = asyncHandler(async (req, res) => {
     reason: reason || "",
     notes: notes || "",
     status: "Pending",
+    timezoneOffsetMinutes,
   });
 
   // Send notification to the vendor
@@ -142,9 +158,14 @@ export const requestLeave = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, "Leave request submitted successfully", leaveRequest));
 });
 
+const HOLIDAY_MESSAGE =
+  "Your meal vendor has declared a holiday for today. No meals will be provided today.";
+
 /**
  * POST /api/v1/leave/vendor/request
- * Vendor submits a leave request for all active customers.
+ * Vendor declares a kitchen holiday for one date.
+ * Only that vendor's subscriptions covering the date are waived, and each
+ * customer is notified once.
  */
 export const requestVendorLeave = asyncHandler(async (req, res) => {
   const vendorId = req.user.ownerId || req.user.userId;
@@ -164,43 +185,38 @@ export const requestVendorLeave = asyncHandler(async (req, res) => {
     throw new ApiError(400, error.details.map((d) => d.message).join("; "));
   }
 
-  const { leaveDate, mealType, reason, notes } = value;
+  const { leaveDate, reason, notes } = value;
+  const mealType = "all";
 
-  const startOfDay = new Date(leaveDate);
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const startOfDay = parseUTC(leaveDate);
+  const endOfDay = new Date(startOfDay);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+  const todayStart = parseUTC(new Date());
   if (startOfDay < todayStart) {
     throw new ApiError(400, "Cannot declare holiday for a past date");
   }
+  const leaveKey = startOfDay.toISOString().slice(0, 10);
 
-  const endOfDay = new Date(leaveDate);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  // Find all active subscriptions of vendor's customers covering the leave date
-  let activeSubs = await Subscription.find({
-    ownerId: vendorId,
-    status: "active",
-    startDate: { $lte: endOfDay },
-    endDate: { $gte: startOfDay },
-  });
-
-  // Fallback: If no date-restricted active subs, find all active subscriptions for this vendor
-  if (activeSubs.length === 0) {
-    activeSubs = await Subscription.find({
+  const [activeSubs, customers] = await Promise.all([
+    Subscription.find({
       ownerId: vendorId,
       status: "active",
-    });
-  }
+      startDate: { $lte: endOfDay },
+      endDate: { $gte: startOfDay },
+    }),
+    Customer.find({
+      ownerId: vendorId,
+      isDeleted: { $ne: true },
+    }).select("_id"),
+  ]);
 
-  if (activeSubs.length === 0) {
+  if (customers.length === 0) {
     return res
       .status(200)
       .json(
         new ApiResponse(
           200,
-          "No active customer subscriptions found. No holiday orders created.",
+          "No customers found for this vendor. No holiday notifications were sent.",
           []
         )
       );
@@ -209,92 +225,113 @@ export const requestVendorLeave = asyncHandler(async (req, res) => {
   const createdRequests = [];
 
   for (const sub of activeSubs) {
-    let leaveRequest = await LeaveRequest.findOne({
+    const existing = await LeaveRequest.findOne({
+      vendorId,
       subscriptionId: sub._id,
-      leaveDate: { $gte: startOfDay, $lte: endOfDay },
       requestedBy: "Vendor",
+      status: "Approved",
+      leaveDate: { $gte: startOfDay, $lte: endOfDay },
     });
+    if (existing) continue;
 
-    if (!leaveRequest) {
-      leaveRequest = await LeaveRequest.create({
-        requestedBy: "Vendor",
-        customerId: sub.customerId,
-        vendorId: vendorId,
-        subscriptionId: sub._id,
-        mealType,
-        leaveDate: startOfDay,
-        reason: reason || "Vendor Kitchen Holiday",
-        notes: notes || "",
-        status: "Approved",
-        approvedBy: req.user.userId,
-        approvedAt: new Date(),
-      });
-    } else {
-      leaveRequest.status = "Approved";
-      leaveRequest.approvedBy = req.user.userId;
-      leaveRequest.approvedAt = new Date();
-      await leaveRequest.save();
-    }
-
-    // Immediately mark existing pending daily orders as skipped for this date & meal
-    const pendingOrders = await DailyOrder.find({
+    const leaveRequest = await LeaveRequest.create({
+      requestedBy: "Vendor",
+      customerId: sub.customerId,
+      vendorId,
       subscriptionId: sub._id,
-      orderDate: { $gte: startOfDay, $lte: endOfDay },
-      status: "pending",
+      mealType,
+      leaveDate: startOfDay,
+      reason: reason || "Vendor Kitchen Holiday",
+      notes: notes || "",
+      status: "Approved",
+      approvedBy: req.user.userId,
+      approvedAt: new Date(),
     });
-
-    const isMealSkippedByLeave = (meal) => {
-      if (mealType === "all" || mealType === "both") return true;
-      if (mealType === "breakfast" && (meal === "breakfast" || meal === "early_morning"))
-        return true;
-      if (mealType === "lunch" && meal === "lunch") return true;
-      if (mealType === "dinner" && meal === "dinner") return true;
-      return false;
-    };
-
-    for (const order of pendingOrders) {
-      if (isMealSkippedByLeave(order.mealType)) {
-        order.status = "skipped";
-        order.cancellationReason = "Vendor Holiday";
-        order.cancelledAt = new Date();
-        await order.save();
-      }
-    }
-
-    // Send notification to customer
-    try {
-      await sendNotification({
-        customerId: sub.customerId,
-        ownerId: vendorId,
-        type: "vendor_holiday",
-        title: "Vendor Kitchen Holiday Declared",
-        message: `Our kitchen will be closed on ${new Date(
-          leaveDate
-        ).toDateString()} (${mealType}). Subscription amount for this day will not be charged (₹0).`,
-        data: {
-          leaveDate,
-          mealType,
-        },
-      });
-    } catch (err) {
-      console.error(
-        `[Notification] Failed to send vendor holiday notification to customer ${sub.customerId}:`,
-        err.message
-      );
-    }
-
+    leaveRequest.waivedAmount = await waiveOrdersForApprovedLeave(leaveRequest);
+    await leaveRequest.save();
     createdRequests.push(leaveRequest);
   }
 
-  res
-    .status(201)
-    .json(
-      new ApiResponse(
-        201,
-        `Vendor holiday declared for ${createdRequests.length} customer subscription(s). No subscription charges will be added for this date.`,
-        createdRequests
-      )
-    );
+  // Every customer of this vendor gets an approved leave in their history,
+  // including customers who have no meal plan covering the date.
+  for (const customer of customers) {
+    const alreadySaved = await LeaveRequest.findOne({
+      vendorId,
+      customerId: customer._id,
+      requestedBy: "Vendor",
+      status: "Approved",
+      leaveDate: { $gte: startOfDay, $lte: endOfDay },
+    }).select("_id");
+    if (alreadySaved) continue;
+
+    const historyLeave = await LeaveRequest.create({
+      requestedBy: "Vendor",
+      customerId: customer._id,
+      vendorId,
+      mealType,
+      leaveDate: startOfDay,
+      reason: reason || "Vendor Kitchen Holiday",
+      notes: notes || "",
+      status: "Approved",
+      approvedBy: req.user.userId,
+      approvedAt: new Date(),
+      waivedAmount: 0,
+    });
+    createdRequests.push(historyLeave);
+  }
+
+  let notifiedCount = 0;
+  for (const customer of customers) {
+    const alreadyNotified = await Notification.findOne({
+      customerId: customer._id,
+      ownerId: vendorId,
+      type: "vendor_holiday",
+      "data.leaveDate": leaveKey,
+    }).select("_id");
+    if (alreadyNotified) continue;
+
+    try {
+      await sendNotification({
+        customerId: customer._id,
+        ownerId: vendorId,
+        type: "vendor_holiday",
+        title: "Vendor holiday",
+        message: HOLIDAY_MESSAGE,
+        data: {
+          leaveDate: leaveKey,
+          mealType,
+        },
+      });
+      notifiedCount += 1;
+    } catch (err) {
+      console.error(
+        `[Notification] Failed to send vendor holiday notification to customer ${customer._id}:`,
+        err.message
+      );
+    }
+  }
+
+  if (createdRequests.length === 0 && notifiedCount === 0) {
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, "Holiday is already declared for this date.", {
+          alreadyDeclared: true,
+          notifiedCount: 0,
+        })
+      );
+  }
+
+  res.status(createdRequests.length > 0 ? 201 : 200).json(
+    new ApiResponse(
+      createdRequests.length > 0 ? 201 : 200,
+      `Vendor holiday declared. ${notifiedCount} customer(s) notified. No meal charges will be added for this date.`,
+      {
+        subscriptions: createdRequests.length,
+        notifiedCount,
+      }
+    )
+  );
 });
 
 /**
@@ -445,8 +482,14 @@ export const approveLeave = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Leave request not found");
   }
 
+  if (leaveRequest.status === "Approved") {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Leave request approved successfully", leaveRequest));
+  }
+
   if (leaveRequest.status !== "Pending") {
-    throw new ApiError(400, `Leave request is already ${leaveRequest.status.toLowerCase()}`);
+    throw new ApiError(400, `This leave was already ${leaveRequest.status.toLowerCase()}.`);
   }
 
   // Authorization check based on who requested it
@@ -473,44 +516,8 @@ export const approveLeave = asyncHandler(async (req, res) => {
   leaveRequest.status = "Approved";
   leaveRequest.approvedBy = req.user.userId;
   leaveRequest.approvedAt = new Date();
+  leaveRequest.waivedAmount = await waiveOrdersForApprovedLeave(leaveRequest);
   await leaveRequest.save();
-
-  // Find and update matching pending orders to skipped status
-  const startOfDay = new Date(leaveRequest.leaveDate);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(leaveRequest.leaveDate);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  const pendingOrders = await DailyOrder.find({
-    subscriptionId: leaveRequest.subscriptionId,
-    orderDate: { $gte: startOfDay, $lte: endOfDay },
-    status: "pending",
-  });
-
-  const isMealSkippedByLeave = (meal) => {
-    if (leaveRequest.mealType === "all" || leaveRequest.mealType === "both") {
-      return true;
-    }
-    if (leaveRequest.mealType === "breakfast" && (meal === "breakfast" || meal === "early_morning")) {
-      return true;
-    }
-    if (leaveRequest.mealType === "lunch" && meal === "lunch") {
-      return true;
-    }
-    if (leaveRequest.mealType === "dinner" && meal === "dinner") {
-      return true;
-    }
-    return false;
-  };
-
-  for (const order of pendingOrders) {
-    if (isMealSkippedByLeave(order.mealType)) {
-      order.status = "skipped";
-      order.cancellationReason = "Leave Approved";
-      order.cancelledAt = new Date();
-      await order.save();
-    }
-  }
 
   if (leaveRequest.requestedBy === "Customer") {
     // Notify the Customer
@@ -520,7 +527,7 @@ export const approveLeave = asyncHandler(async (req, res) => {
         ownerId: leaveRequest.vendorId,
         type: "leave_approved",
         title: "Leave Approved",
-        message: `Your leave request for ${new Date(leaveRequest.leaveDate).toDateString()} (${leaveRequest.mealType}) has been approved.`,
+        message: `Your leave request for ${new Date(leaveRequest.leaveDate).toDateString()} (${leaveRequest.mealType}) has been approved. ₹${Number(leaveRequest.waivedAmount || 0).toFixed(0)} will not be charged for this meal.`,
         data: {
           leaveRequestId: leaveRequest._id,
         },
@@ -562,8 +569,14 @@ export const rejectLeave = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Leave request not found");
   }
 
+  if (leaveRequest.status === "Rejected") {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Leave request rejected successfully", leaveRequest));
+  }
+
   if (leaveRequest.status !== "Pending") {
-    throw new ApiError(400, `Leave request is already ${leaveRequest.status.toLowerCase()}`);
+    throw new ApiError(400, `This leave was already ${leaveRequest.status.toLowerCase()}.`);
   }
 
   // Authorization check based on who requested it
@@ -658,7 +671,7 @@ export const getLeaveHistory = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === "customer") {
-    const { customerId } = req.user;
+    const customerId = await customerIdFromRequest(req);
     if (!customerId) {
       throw new ApiError(403, "Customer ID not found in token");
     }
@@ -694,6 +707,75 @@ export const getLeaveHistory = asyncHandler(async (req, res) => {
         total,
         pages: Math.ceil(total / limit),
       },
+    })
+  );
+});
+
+/**
+ * GET /api/v1/leave/summary?month=YYYY-MM
+ * Monthly leave counts for the logged-in customer or vendor.
+ */
+export const getLeaveSummary = asyncHandler(async (req, res) => {
+  const querySchema = Joi.object({
+    month: Joi.string().pattern(/^\d{4}-\d{2}$/).optional(),
+    timezoneOffsetMinutes: Joi.number().integer().min(-720).max(840).optional(),
+  });
+  const { error, value } = querySchema.validate(req.query, { stripUnknown: true });
+  if (error) {
+    throw new ApiError(400, error.details.map((d) => d.message).join("; "));
+  }
+
+  const offset = Number.isFinite(Number(value.timezoneOffsetMinutes))
+    ? Number(value.timezoneOffsetMinutes)
+    : 330;
+  const shifted = new Date(Date.now() + offset * 60 * 1000);
+  const month =
+    value.month ||
+    `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+  const [year, mon] = month.split("-").map(Number);
+  const start = new Date(Date.UTC(year, mon - 1, 1));
+  const end = new Date(Date.UTC(year, mon, 0, 23, 59, 59, 999));
+
+  const matchQuery = { leaveDate: { $gte: start, $lte: end } };
+  if (req.user.role === "customer") {
+    const customerId = await customerIdFromRequest(req);
+    if (!customerId) throw new ApiError(403, "Customer ID not found in token");
+    matchQuery.customerId = customerId;
+  } else if (req.user.role === "vendor" || req.user.role === "admin") {
+    const vendorId = req.user.ownerId || req.user.userId;
+    if (!vendorId) throw new ApiError(403, "Vendor ID not found in token");
+    matchQuery.vendorId = vendorId;
+  } else {
+    throw new ApiError(403, "Access denied for this role");
+  }
+
+  const leaves = await LeaveRequest.find(matchQuery).lean();
+  const tally = { Pending: 0, Approved: 0, Rejected: 0 };
+  const byMeal = { breakfast: 0, lunch: 0, dinner: 0 };
+  let waivedAmount = 0;
+  for (const leave of leaves) {
+    tally[leave.status] = (tally[leave.status] || 0) + 1;
+    if (leave.status === "Approved") {
+      waivedAmount += Number(leave.waivedAmount) || 0;
+      const meals =
+        leave.mealType === "all" || leave.mealType === "both"
+          ? ["breakfast", "lunch", "dinner"]
+          : [leave.mealType];
+      for (const meal of meals) {
+        if (byMeal[meal] != null) byMeal[meal] += 1;
+      }
+    }
+  }
+
+  res.status(200).json(
+    new ApiResponse(200, "Leave summary fetched", {
+      month,
+      total: leaves.length,
+      pending: tally.Pending,
+      approved: tally.Approved,
+      rejected: tally.Rejected,
+      byMeal,
+      waivedAmount: Math.round(waivedAmount * 100) / 100,
     })
   );
 });

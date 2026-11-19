@@ -147,7 +147,7 @@ final class DailyFinanceRow {
   static double _toDouble(dynamic v) => (v as num?)?.toDouble() ?? 0;
 }
 
-enum FinanceTransactionKind { income, expense }
+enum FinanceTransactionKind { income, expense, processed, deposit, refund }
 
 final class FinanceTransaction {
   const FinanceTransaction({
@@ -156,16 +156,56 @@ final class FinanceTransaction {
     required this.date,
     required this.amount,
     required this.title,
+    this.deletable = false,
+    this.deleteAs,
   });
 
   final String id;
   final FinanceTransactionKind kind;
   final DateTime date;
   final double amount;
-  final String title; // e.g. Income source / Expense title
+  final String title;
+  final bool deletable;
 
-  bool get isCredit => kind == FinanceTransactionKind.income;
-  String get financeType => isCredit ? 'income' : 'expense';
+  /// Which collection delete should call: income or expense.
+  final String? deleteAs;
+
+  bool get isCredit =>
+      kind == FinanceTransactionKind.income ||
+      kind == FinanceTransactionKind.deposit ||
+      kind == FinanceTransactionKind.processed;
+
+  String get financeType => kind.name;
   String get type => isCredit ? 'credit' : 'debit';
+
+  factory FinanceTransaction.fromJson(Map<String, dynamic> json) {
+    final rawKind = (json['kind'] ?? json['financeType'] ?? 'income').toString();
+    final kind = FinanceTransactionKind.values.firstWhere(
+      (k) => k.name == rawKind,
+      orElse: () => FinanceTransactionKind.income,
+    );
+    return FinanceTransaction(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      kind: kind,
+      date: _calendarDate(json['date']),
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      title: (json['title'] ?? json['description'] ?? '').toString(),
+      deletable: json['deletable'] == true,
+      deleteAs: json['deleteAs']?.toString(),
+    );
+  }
+
+  static DateTime _calendarDate(dynamic raw) {
+    final text = raw?.toString() ?? '';
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(text);
+    if (match != null) {
+      return DateTime(
+        int.parse(match.group(1)!),
+        int.parse(match.group(2)!),
+        int.parse(match.group(3)!),
+      );
+    }
+    return DateTime.tryParse(text)?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
 }
 
